@@ -1,7 +1,7 @@
 use crate::message::{ClientId, ClientInfo, MessageFrame};
 use anyhow::Result;
 use quinn::Connection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, RwLock};
@@ -28,6 +28,7 @@ pub struct ClientConnection {
     pub connected_at: u64,
     pub last_seen: u64,
     pub message_count: u64,
+    pub subscriptions: HashSet<String>,
 }
 
 impl ClientConnection {
@@ -45,6 +46,7 @@ impl ClientConnection {
             connected_at: now,
             last_seen: now,
             message_count: 0,
+            subscriptions: HashSet::new(),
         }
     }
 
@@ -234,5 +236,61 @@ impl ClientManager {
     /// 获取广播发送器的克隆
     pub fn get_broadcast_sender(&self) -> broadcast::Sender<MessageFrame> {
         self.broadcast_tx.clone()
+    }
+
+    /// 客户端订阅主题
+    pub async fn subscribe_topics(&self, client_id: &ClientId, topics: Vec<String>) -> Result<()> {
+        let mut clients = self.clients.write().await;
+        if let Some(client) = clients.get_mut(client_id) {
+            for topic in topics {
+                client.subscriptions.insert(topic.clone());
+                info!("Client {} subscribed to topic: {}", client_id, topic);
+            }
+            client.update_last_seen();
+        }
+        Ok(())
+    }
+
+    /// 客户端取消订阅主题
+    pub async fn unsubscribe_topics(&self, client_id: &ClientId, topics: Vec<String>) -> Result<()> {
+        let mut clients = self.clients.write().await;
+        if let Some(client) = clients.get_mut(client_id) {
+            for topic in topics {
+                client.subscriptions.remove(&topic);
+                info!("Client {} unsubscribed from topic: {}", client_id, topic);
+            }
+            client.update_last_seen();
+        }
+        Ok(())
+    }
+
+    /// 向订阅了特定主题的客户端推送消息
+    pub async fn push_to_subscribers(&self, topic: &str, frame: &MessageFrame) -> Result<usize> {
+        let clients = self.clients.read().await;
+        let mut sent_count = 0;
+
+        for client in clients.values() {
+            if matches!(client.state, ClientState::Connected) && client.subscriptions.contains(topic) {
+                if let Err(e) = client.send_message(frame).await {
+                    error!("Failed to push message to subscriber {}: {}", client.id, e);
+                } else {
+                    sent_count += 1;
+                }
+            }
+        }
+
+        if sent_count > 0 {
+            info!("Pushed message to {} subscribers of topic '{}'", sent_count, topic);
+        }
+
+        Ok(sent_count)
+    }
+
+    /// 获取主题的订阅者数量
+    pub async fn get_subscriber_count(&self, topic: &str) -> usize {
+        let clients = self.clients.read().await;
+        clients.values()
+            .filter(|client| matches!(client.state, ClientState::Connected) && client.subscriptions.contains(topic))
+            .count()
     }
 }

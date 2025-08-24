@@ -23,6 +23,9 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 bytes = "1.0"
 futures = "0.3"
 clap = { version = "4.0", features = ["derive"] }
+rand = "0.8"
+base64 = "0.21"
+sha1 = "0.10"
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -38,6 +41,18 @@ path = "examples/chat_client.rs"
 [[example]]
 name = "benchmark"
 path = "examples/benchmark.rs"
+
+[[example]]
+name = "websocket_client"
+path = "examples/websocket_client.rs"
+
+[[example]]
+name = "http3_websocket_client"
+path = "examples/http3_websocket_client.rs"
+
+[[example]]
+name = "simple_http3_client"
+path = "examples/simple_http3_client.rs"
 
 [lib]
 name = "quic_websocket"

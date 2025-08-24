@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
     quic_config_set_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
 
     // Create and set tls config.
-    const char *const protos[1] = {"http/0.9"};
+    const char *const protos[1] = {"h3"};
     client.tls_config = quic_tls_config_new_client_config(protos, 1, true);
     if (client.tls_config == NULL) {
         ret = -1;

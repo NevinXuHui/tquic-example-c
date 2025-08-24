@@ -56,6 +56,12 @@ impl MessageHandler {
             MessageType::Close { code, reason } => {
                 self.handle_close(client_id, code, reason).await
             }
+            MessageType::Subscribe { topics } => {
+                self.handle_subscribe(client_id, topics).await
+            }
+            MessageType::Unsubscribe { topics } => {
+                self.handle_unsubscribe(client_id, topics).await
+            }
             _ => {
                 warn!("Unhandled message type from client {}: {:?}", client_id, frame.message_type);
                 self.send_error(client_id, error_codes::INVALID_MESSAGE, "Unsupported message type").await
@@ -208,6 +214,50 @@ impl MessageHandler {
 
         // 移除客户端
         self.client_manager.remove_client(client_id).await;
+        Ok(())
+    }
+
+    /// 处理订阅请求
+    async fn handle_subscribe(&self, client_id: &ClientId, topics: Vec<String>) -> Result<()> {
+        info!("Client {} subscribing to topics: {:?}", client_id, topics);
+
+        self.client_manager.subscribe_topics(client_id, topics.clone()).await?;
+
+        // 发送订阅确认
+        let confirmation = MessageFrame::new(MessageType::Text {
+            content: format!("✅ Subscribed to topics: {}", topics.join(", ")),
+            timestamp: current_timestamp(),
+        });
+
+        self.client_manager.send_to_client(client_id, &confirmation).await?;
+
+        // 发送欢迎消息到新订阅者
+        for topic in &topics {
+            let welcome_frame = MessageFrame::new(MessageType::ServerPush {
+                topic: topic.clone(),
+                content: format!("Welcome to topic '{}'! You will receive real-time updates.", topic),
+                timestamp: current_timestamp(),
+            });
+
+            self.client_manager.send_to_client(client_id, &welcome_frame).await?;
+        }
+
+        Ok(())
+    }
+
+    /// 处理取消订阅请求
+    async fn handle_unsubscribe(&self, client_id: &ClientId, topics: Vec<String>) -> Result<()> {
+        info!("Client {} unsubscribing from topics: {:?}", client_id, topics);
+
+        self.client_manager.unsubscribe_topics(client_id, topics.clone()).await?;
+
+        // 发送取消订阅确认
+        let confirmation = MessageFrame::new(MessageType::Text {
+            content: format!("✅ Unsubscribed from topics: {}", topics.join(", ")),
+            timestamp: current_timestamp(),
+        });
+
+        self.client_manager.send_to_client(client_id, &confirmation).await?;
         Ok(())
     }
 

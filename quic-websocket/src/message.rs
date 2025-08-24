@@ -67,6 +67,20 @@ pub enum MessageType {
         code: u16,
         message: String,
     },
+    /// 订阅主题
+    Subscribe {
+        topics: Vec<String>,
+    },
+    /// 取消订阅
+    Unsubscribe {
+        topics: Vec<String>,
+    },
+    /// 服务器推送通知
+    ServerPush {
+        topic: String,
+        content: String,
+        timestamp: u64,
+    },
 }
 
 /// 客户端信息
@@ -154,6 +168,9 @@ impl fmt::Display for MessageType {
             MessageType::ClientList { clients } => write!(f, "ClientList({} clients)", clients.len()),
             MessageType::Close { code, reason } => write!(f, "Close({}: {})", code, reason),
             MessageType::Error { code, message } => write!(f, "Error({}: {})", code, message),
+            MessageType::Subscribe { topics } => write!(f, "Subscribe({})", topics.join(", ")),
+            MessageType::Unsubscribe { topics } => write!(f, "Unsubscribe({})", topics.join(", ")),
+            MessageType::ServerPush { topic, content, .. } => write!(f, "ServerPush({}: {})", topic, content),
         }
     }
 }

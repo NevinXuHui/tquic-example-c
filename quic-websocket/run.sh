@@ -114,11 +114,25 @@ run_chat_client() {
         print_error "Rust/Cargo not found. Cannot run chat client."
         exit 1
     fi
-    
+
     print_status "Starting interactive chat client..."
     cargo run --example chat_client -- \
         --server 127.0.0.1:4433 \
         --name "ChatUser" \
+        --verbose
+}
+
+# Run WebSocket client with subscription support
+run_websocket_client() {
+    if ! command -v cargo &> /dev/null; then
+        print_error "Rust/Cargo not found. Cannot run WebSocket client."
+        exit 1
+    fi
+
+    print_status "Starting enhanced WebSocket client with subscription support..."
+    cargo run --example websocket_client -- \
+        --server 127.0.0.1:4433 \
+        --name "WebSocketUser" \
         --verbose
 }
 
@@ -132,6 +146,7 @@ show_help() {
     echo "  native      Run with native Rust (default)"
     echo "  test        Run test client"
     echo "  chat        Run interactive chat client"
+    echo "  websocket   Run enhanced WebSocket client with subscriptions"
     echo "  certs       Generate certificates only"
     echo "  clean       Clean build artifacts"
     echo "  help        Show this help message"
@@ -140,6 +155,7 @@ show_help() {
     echo "  $0                # Run with native Rust"
     echo "  $0 test           # Run test client"
     echo "  $0 chat           # Run chat client"
+    echo "  $0 websocket      # Run WebSocket client with push notifications"
 }
 
 # Clean build artifacts
@@ -161,6 +177,9 @@ case "${1:-native}" in
         ;;
     "chat")
         run_chat_client
+        ;;
+    "websocket")
+        run_websocket_client
         ;;
     "certs")
         ./generate_certs.sh

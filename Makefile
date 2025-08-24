@@ -3,13 +3,13 @@ LIB_DIR = $(TQUIC_DIR)/target/release
 INCLUDE_DIR = $(TQUIC_DIR)/include
 
 INCS = -I$(INCLUDE_DIR)
-CFLAGS = -I. -Wall -Werror -pedantic -fsanitize=address -g -static-libasan -I$(TQUIC_DIR)/deps/boringssl/src/include/
+CFLAGS = -I. -Wall -Werror -pedantic -g -I$(TQUIC_DIR)/deps/boringssl/src/include/
 
 LDFLAGS = -L$(LIB_DIR)
 
-LIBS = $(LIB_DIR)/libtquic.a -lev -ldl -lm
+LIBS = $(LIB_DIR)/libtquic.a -lev -ldl -lm -lpthread
 
-all: simple_server simple_client simple_h3_server simple_h3_client
+all: simple_server simple_client simple_h3_server simple_h3_client tquic_websocket_server tquic_websocket_client
 
 simple_server: simple_server.c $(LIB_DIR)/libtquic.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
@@ -23,8 +23,14 @@ simple_h3_server: simple_h3_server.c $(LIB_DIR)/libtquic.a
 simple_h3_client: simple_h3_client.c $(LIB_DIR)/libtquic.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
 
+tquic_websocket_server: tquic_websocket_server.c $(LIB_DIR)/libtquic.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
+
+tquic_websocket_client: tquic_websocket_client.c $(LIB_DIR)/libtquic.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
+
 $(LIB_DIR)/libtquic.a:
 	git submodule update --init --recursive && cd $(TQUIC_DIR) && cargo build --release -F ffi
 
 clean:
-	@$(RM) -rf simple_server simple_client simple_h3_server simple_h3_client
+	@$(RM) -rf simple_server simple_client simple_h3_server simple_h3_client tquic_websocket_server tquic_websocket_client

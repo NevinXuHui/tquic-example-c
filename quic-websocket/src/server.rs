@@ -1,6 +1,6 @@
 use crate::client::ClientManager;
 use crate::handler::MessageHandler;
-use crate::message::{ClientId, MessageFrame};
+use crate::message::{ClientId, MessageFrame, MessageType};
 use anyhow::{Context, Result};
 use quinn::{Endpoint, ServerConfig};
 use std::net::SocketAddr;
@@ -50,6 +50,9 @@ impl QuicWebSocketServer {
 
         // 启动清理任务
         self.start_cleanup_task().await;
+
+        // 启动服务器主动推送任务 - WebSocket 核心特色
+        self.start_push_tasks().await;
 
         // 主循环：接受新连接
         while let Some(conn) = self.endpoint.accept().await {
@@ -175,20 +178,259 @@ impl QuicWebSocketServer {
     /// 启动定期清理任务
     async fn start_cleanup_task(&self) {
         let client_manager = self.client_manager.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_secs(30));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let cleaned = client_manager.cleanup_disconnected_clients().await;
                 if cleaned > 0 {
                     info!("Cleaned up {} disconnected clients", cleaned);
                 }
-                
+
                 let client_count = client_manager.client_count().await;
                 debug!("Active clients: {}", client_count);
+            }
+        });
+    }
+
+    /// 启动服务器主动推送任务 - WebSocket 特色功能
+    async fn start_push_tasks(&self) {
+        // 1. 定期心跳推送
+        self.start_heartbeat_task().await;
+
+        // 2. 服务器状态推送
+        self.start_status_push_task().await;
+
+        // 3. 系统通知推送
+        self.start_notification_task().await;
+
+        // 4. 实时数据推送（模拟）
+        self.start_realtime_data_task().await;
+    }
+
+    /// 定期心跳推送任务
+    async fn start_heartbeat_task(&self) {
+        let client_manager = self.client_manager.clone();
+
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(30));
+
+            loop {
+                interval.tick().await;
+
+                let heartbeat_frame = MessageFrame::new(MessageType::Ping {
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = client_manager.broadcast_message(&heartbeat_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    info!("Sent heartbeat to {} clients", sent_count);
+                }
+            }
+        });
+    }
+
+    /// 服务器状态推送任务
+    async fn start_status_push_task(&self) {
+        let client_manager = self.client_manager.clone();
+        let server_name = self.server_name.clone();
+
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(60));
+
+            loop {
+                interval.tick().await;
+
+                let client_count = client_manager.client_count().await;
+                let status_message = format!(
+                    "🔔 Server Status: {} - {} active connections",
+                    server_name, client_count
+                );
+
+                let status_frame = MessageFrame::new(MessageType::Text {
+                    content: status_message,
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = client_manager.broadcast_message(&status_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    info!("Pushed server status to {} clients", sent_count);
+                }
+            }
+        });
+    }
+
+    /// 系统通知推送任务 - 使用主题订阅
+    async fn start_notification_task(&self) {
+        let client_manager = self.client_manager.clone();
+
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(90)); // 1.5分钟
+            let notifications = vec![
+                ("system", "📢 Welcome to QUIC WebSocket Server!"),
+                ("tips", "⚡ Enjoying the low-latency experience?"),
+                ("tech", "🚀 QUIC protocol provides 0-RTT connection establishment"),
+                ("security", "🔒 All connections are secured with TLS 1.3"),
+                ("performance", "🌐 Multiplexed streams for better performance"),
+                ("news", "📰 Server is running smoothly with active connections"),
+            ];
+            let mut index = 0;
+
+            loop {
+                interval.tick().await;
+
+                let (topic, notification) = notifications[index % notifications.len()];
+                let notification_frame = MessageFrame::new(MessageType::ServerPush {
+                    topic: topic.to_string(),
+                    content: notification.to_string(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = client_manager.push_to_subscribers(topic, &notification_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    info!("Pushed '{}' notification to {} subscribers of topic '{}'", notification, sent_count, topic);
+                }
+
+                index += 1;
+            }
+        });
+    }
+
+    /// 实时数据推送任务 - 多主题数据推送
+    async fn start_realtime_data_task(&self) {
+        let client_manager = self.client_manager.clone();
+
+        // 传感器数据推送
+        let sensor_manager = client_manager.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(15));
+            let mut counter = 0;
+
+            loop {
+                interval.tick().await;
+
+                let sensor_data = serde_json::json!({
+                    "temperature": 20.0 + (counter as f64 * 0.1) % 10.0,
+                    "humidity": 45.0 + (counter as f64 * 0.2) % 20.0,
+                    "pressure": 1013.25 + (counter as f64 * 0.05) % 5.0,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sensor_frame = MessageFrame::new(MessageType::ServerPush {
+                    topic: "sensors".to_string(),
+                    content: format!("🌡️ Sensor Data: {}", sensor_data),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = sensor_manager.push_to_subscribers("sensors", &sensor_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    debug!("Pushed sensor data to {} subscribers", sent_count);
+                }
+
+                counter += 1;
+            }
+        });
+
+        // 系统监控数据推送
+        let monitor_manager = client_manager.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(20));
+            let mut counter = 0;
+
+            loop {
+                interval.tick().await;
+
+                let monitor_data = serde_json::json!({
+                    "cpu_usage": (counter % 100) as f64,
+                    "memory_usage": 30.0 + (counter as f64 * 0.3) % 40.0,
+                    "disk_usage": 25.0 + (counter as f64 * 0.1) % 15.0,
+                    "network_io": counter % 1000,
+                    "active_connections": monitor_manager.client_count().await,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let monitor_frame = MessageFrame::new(MessageType::ServerPush {
+                    topic: "monitoring".to_string(),
+                    content: format!("📊 System Monitor: {}", monitor_data),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = monitor_manager.push_to_subscribers("monitoring", &monitor_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    debug!("Pushed monitoring data to {} subscribers", sent_count);
+                }
+
+                counter += 1;
+            }
+        });
+
+        // 股票价格模拟推送
+        let stock_manager = client_manager.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(5));
+            let stocks = vec!["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"];
+            let mut prices = vec![150.0, 2800.0, 300.0, 800.0, 3200.0];
+
+            loop {
+                interval.tick().await;
+
+                // 模拟价格波动
+                for (i, price) in prices.iter_mut().enumerate() {
+                    let change = (rand::random::<f64>() - 0.5) * 10.0; // ±5 的随机变化
+                    *price = (*price + change).max(1.0); // 确保价格不为负
+                }
+
+                let stock_data = serde_json::json!({
+                    "stocks": stocks.iter().zip(prices.iter()).map(|(symbol, price)| {
+                        serde_json::json!({
+                            "symbol": symbol,
+                            "price": format!("{:.2}", price),
+                            "change": format!("{:+.2}", (rand::random::<f64>() - 0.5) * 5.0)
+                        })
+                    }).collect::<Vec<_>>(),
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let stock_frame = MessageFrame::new(MessageType::ServerPush {
+                    topic: "stocks".to_string(),
+                    content: format!("📈 Stock Prices: {}", stock_data),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                });
+
+                let sent_count = stock_manager.push_to_subscribers("stocks", &stock_frame).await.unwrap_or(0);
+                if sent_count > 0 {
+                    debug!("Pushed stock data to {} subscribers", sent_count);
+                }
             }
         });
     }
