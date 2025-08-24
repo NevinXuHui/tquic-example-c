@@ -9,10 +9,13 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 - **标准 QUIC 示例** - 基础的 HTTP/0.9 客户端/服务器
 - **HTTP/3 示例** - 完整的 HTTP/3 实现
 - **🌟 WebSocket over HTTP/3** - 符合 RFC 9220 标准的 WebSocket 实现
+- **🏗️ 分层 WebSocket 客户端** - 模块化、可扩展的客户端架构
+- **🧪 测试服务器** - 支持 systemd 的独立测试服务器项目
 
 ## 🎯 核心特性
 
 ### ✅ 标准 WebSocket over HTTP/3 实现
+
 - **符合 RFC 9220 标准** - WebSocket over HTTP/3
 - **符合 RFC 6455 标准** - WebSocket 协议
 - **真正的协议解析** - 完整的 HTTP/3 头部处理
@@ -22,6 +25,7 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 - **🔧 字节序修复** - 已解决小端序系统上的乱码问题
 
 ### 🔧 技术亮点
+
 - **QUIC 协议** - 基于 UDP 的可靠传输
 - **HTTP/3** - 下一代 HTTP 协议
 - **TLS 1.3 加密** - 现代加密标准
@@ -31,17 +35,38 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 ## 📦 项目结构
 
 ### 基础示例
+
 - **`simple_server`** - HTTP/0.9 服务器，响应 "OK"
 - **`simple_client`** - HTTP/0.9 客户端
 - **`simple_h3_server`** - HTTP/3 服务器
 - **`simple_h3_client`** - HTTP/3 客户端
 
 ### 🌟 WebSocket 实现
-- **`tquic_websocket_server`** - 标准 WebSocket over HTTP/3 服务器
-- **`tquic_websocket_client`** - 自动化测试客户端
-- **`tquic_websocket_interactive_client`** - 交互式聊天客户端
+
+- **`tquic_websocket_server.c`** - 标准 WebSocket over HTTP/3 服务器
+- **`tquic_websocket_client.c`** - 自动化测试客户端
+- **`tquic_websocket_interactive_client.c`** - 交互式聊天客户端
+
+### 🧪 独立测试服务器项目
+
+- **`tquic-websocket-server/`** - 独立的 WebSocket 测试服务器项目
+  - 完整的 CMake 构建系统
+  - systemd 服务集成（用于测试部署）
+  - 配置文件和证书管理
+  - 自动化安装/卸载脚本
+  - 便于测试和开发
+
+### 🏗️ 分层客户端架构
+
+- **`websocket-layered-client/`** - 模块化 WebSocket 客户端
+  - 六层架构设计（应用层、业务逻辑层、消息处理层、事件系统层、协议层、传输层）
+  - 两个完整示例：聊天客户端和 JSON 数据客户端
+  - 完整的事件驱动系统
+  - JSON 消息处理和路由
+  - 可扩展的插件架构
 
 ### 自定义 QUIC WebSocket
+
 - **`quic-websocket/`** - 基于 Rust 的自定义 QUIC WebSocket 服务器
   - 支持主题订阅
   - 服务器推送功能
@@ -50,6 +75,7 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 ## 🛠️ 环境要求
 
 ### 系统依赖
+
 参考 [TQUIC 安装要求](https://tquic.net/docs/getting_started/installation#prerequisites)：
 
 - **Linux** (Ubuntu 18.04+ / CentOS 7+)
@@ -60,17 +86,19 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 - **libev** 事件循环库
 
 ### 安装依赖 (Ubuntu)
+
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libssl-dev libev-dev pkg-config
+sudo apt install build-essential cmake libssl-dev libev-dev pkg-config libcjson-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 ```
 
 ### 安装依赖 (CentOS)
+
 ```bash
 sudo yum groupinstall "Development Tools"
-sudo yum install cmake openssl-devel libev-devel pkgconfig
+sudo yum install cmake openssl-devel libev-devel pkgconfig libcjson-devel
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 ```
@@ -80,12 +108,14 @@ source ~/.cargo/env
 ### 方法一：使用 CMake (推荐)
 
 #### 1. 克隆项目
+
 ```bash
 git clone <repository-url>
 cd tquic-example-c
 ```
 
 #### 2. 使用构建脚本 (最简单)
+
 ```bash
 # 构建所有示例
 ./build.sh
@@ -107,6 +137,7 @@ cd tquic-example-c
 ```
 
 #### 3. 手动使用 CMake
+
 ```bash
 # 配置
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -119,6 +150,7 @@ cmake --install build
 ```
 
 #### 4. 使用 CMake 预设
+
 ```bash
 # 查看可用预设
 cmake --list-presets
@@ -139,12 +171,12 @@ cmake --build --preset release
 
 #### 5. CMake 构建选项
 
-| 变量名 | 默认值 | 描述 |
-|--------|--------|------|
-| `CMAKE_BUILD_TYPE` | Release | 构建类型 (Debug/Release/RelWithDebInfo/MinSizeRel) |
-| `BUILD_WEBSOCKET_EXAMPLES` | ON | 是否构建 WebSocket 示例 |
-| `BUILD_SIMPLE_EXAMPLES` | ON | 是否构建简单 QUIC 示例 |
-| `BUILD_TESTS` | OFF | 是否构建测试程序 |
+| 变量名                       | 默认值  | 描述                                               |
+| ---------------------------- | ------- | -------------------------------------------------- |
+| `CMAKE_BUILD_TYPE`         | Release | 构建类型 (Debug/Release/RelWithDebInfo/MinSizeRel) |
+| `BUILD_WEBSOCKET_EXAMPLES` | ON      | 是否构建 WebSocket 示例                            |
+| `BUILD_SIMPLE_EXAMPLES`    | ON      | 是否构建简单 QUIC 示例                             |
+| `BUILD_TESTS`              | OFF     | 是否构建测试程序                                   |
 
 ```bash
 # 示例：只构建 WebSocket 示例的调试版本
@@ -157,6 +189,7 @@ cmake --build build-debug
 ```
 
 #### 6. 构建输出目录
+
 ```bash
 # CMake 构建输出
 build/bin/
@@ -175,6 +208,7 @@ build/bin/
 ```
 
 ### 方法二：使用传统 Makefile
+
 ```bash
 # 编译所有示例
 make
@@ -184,6 +218,7 @@ make clean
 ```
 
 ### 3. 生成测试证书
+
 ```bash
 openssl req -x509 -newkey rsa:2048 -keyout cert.key -out cert.crt -days 365 -nodes -subj "/CN=localhost"
 ```
@@ -217,14 +252,61 @@ cd quic-websocket && cargo run --bin server
 # ✅ Received WebSocket text: Hello from TQUIC WebSocket client!
 ```
 
+### 🧪 独立测试服务器部署
+
+快速部署独立的 WebSocket 测试服务器：
+
+```bash
+# 1. 构建独立服务器项目
+cd tquic-websocket-server
+./build.sh
+
+# 2. 安装为系统服务 (需要 root 权限)
+sudo ./scripts/install.sh
+
+# 3. 验证服务状态
+sudo systemctl status tquic-websocket-server
+
+# 4. 查看服务日志
+sudo journalctl -u tquic-websocket-server -f
+
+# 5. 测试服务器
+sudo ./scripts/test.sh
+```
+
+### 🏗️ 分层客户端体验
+
+体验模块化的分层客户端架构：
+
+```bash
+# 1. 构建分层客户端
+cd websocket-layered-client
+./build.sh
+
+# 2. 启动聊天客户端
+./build/bin/chat_client 127.0.0.1 4433 myusername
+
+# 3. 或启动 JSON 数据客户端
+./build/bin/json_client 127.0.0.1 4433 json_user
+
+# 4. 在 JSON 客户端中尝试各种命令：
+# > help                    # 查看帮助
+# > text Hello World!       # 发送文本消息
+# > json {"key": "value"}    # 发送自定义 JSON
+# > heartbeat               # 发送心跳
+# > quit                    # 退出
+```
+
 ### 基础 QUIC 示例
 
 #### 启动 HTTP/0.9 服务器
+
 ```bash
 ./simple_server 0.0.0.0 4433
 ```
 
 #### 连接客户端
+
 ```bash
 ./simple_client 127.0.0.1 4433
 ```
@@ -232,30 +314,139 @@ cd quic-websocket && cargo run --bin server
 ### HTTP/3 示例
 
 #### 启动 HTTP/3 服务器
+
 ```bash
 ./simple_h3_server 0.0.0.0 4433
 ```
 
 #### 连接 HTTP/3 客户端
+
 ```bash
 ./simple_h3_client 127.0.0.1 4433
 ```
 
 ## 🌟 WebSocket over HTTP/3 使用指南
 
+### 🧪 独立测试服务器 (tquic-websocket-server/)
+
+独立的 WebSocket 测试服务器项目，支持完整的系统服务集成，便于开发和测试。
+
+#### 特性
+
+- ✅ **systemd 集成** - 完整的系统服务支持
+- ✅ **配置管理** - 灵活的配置文件系统
+- ✅ **TLS 证书** - 自动生成和管理
+- ✅ **日志系统** - 结构化日志和轮转
+- ✅ **安全配置** - 用户隔离和权限控制
+- ✅ **测试友好** - 支持 systemd 监控和自动化测试
+
+#### 快速部署
+
+```bash
+cd tquic-websocket-server
+
+# 构建项目
+./build.sh
+
+# 安装为系统服务
+sudo ./scripts/install.sh
+
+# 管理服务
+sudo systemctl start tquic-websocket-server
+sudo systemctl status tquic-websocket-server
+sudo journalctl -u tquic-websocket-server -f
+
+# 测试服务
+sudo ./scripts/test.sh
+
+# 卸载服务
+sudo ./scripts/uninstall.sh
+```
+
+#### 配置文件
+
+```ini
+# /etc/tquic-websocket-server/server.conf
+listen_host=0.0.0.0
+listen_port=4433
+cert_file=/etc/tquic-websocket-server/cert.pem
+key_file=/etc/tquic-websocket-server/key.pem
+log_level=info
+max_connections=1000
+```
+
+### 🏗️ 分层客户端 (websocket-layered-client/)
+
+模块化、可扩展的 WebSocket 客户端架构，展示了完整的分层设计。
+
+#### 架构特点
+
+- 🏗️ **六层架构** - 应用层、业务逻辑层、消息处理层、事件系统层、协议层、传输层
+- 🔧 **模块化设计** - 每层职责清晰，接口标准化
+- 🎯 **事件驱动** - 完整的异步事件处理系统
+- 📋 **JSON 消息** - 结构化消息处理和路由
+- 🔌 **可扩展** - 支持自定义应用层实现
+
+#### 示例应用
+
+```bash
+cd websocket-layered-client
+./build.sh
+
+# 1. 聊天客户端 - 面向用户交互
+./build/bin/chat_client 127.0.0.1 4433 username
+# 支持频道管理、用户交互、消息显示
+
+# 2. JSON 客户端 - 面向开发者
+./build/bin/json_client 127.0.0.1 4433 json_user
+# 支持多种消息类型、结构化数据、实时交换
+```
+
+#### JSON 客户端命令
+
+```bash
+# 基本命令
+help                    # 显示帮助
+status                  # 显示状态
+quit/exit              # 退出
+
+# 消息发送
+text <内容>            # 发送文本消息
+notify <内容>          # 发送通知消息
+request <内容>         # 发送请求消息
+heartbeat              # 发送心跳消息
+
+# 高级功能
+subscribe <主题>       # 订阅主题
+publish <主题> <内容>  # 发布消息
+json <JSON字符串>      # 发送自定义JSON
+
+# 示例
+text Hello World!
+notify 系统维护通知
+json {"action": "login", "user_id": 123}
+```
+
+### 📋 基础 WebSocket 示例
+
+原始的 WebSocket over HTTP/3 实现，展示核心协议功能。
+
 ### 方式一：自动化测试
 
 #### 1. 启动 WebSocket 服务器
+
 ```bash
 ./tquic_websocket_server 127.0.0.1 4433
 ```
 
 #### 2. 运行自动化测试客户端
+
 ```bash
 ./tquic_websocket_client 127.0.0.1 4433
 ```
 
 **预期输出：**
+
 ```
 WebSocket client connection established
 WebSocket upgrade request sent
@@ -268,16 +459,19 @@ Received WebSocket text: Hello from TQUIC WebSocket client!
 ### 方式二：交互式聊天
 
 #### 1. 启动 WebSocket 服务器
+
 ```bash
 ./tquic_websocket_server 127.0.0.1 4433
 ```
 
 #### 2. 启动交互式客户端
+
 ```bash
 ./tquic_websocket_interactive_client 127.0.0.1 4433
 ```
 
 #### 3. 开始聊天
+
 ```
 Connecting to 127.0.0.1:4433...
 QUIC connection established
@@ -319,23 +513,27 @@ Goodbye!
 ### 核心技术特性
 
 #### 1. 标准协议支持
+
 - **RFC 9220** - WebSocket over HTTP/3
 - **RFC 6455** - WebSocket 协议
 - **RFC 9114** - HTTP/3 协议
 - **RFC 9000** - QUIC 传输协议
 
 #### 2. 安全特性
+
 - **TLS 1.3 加密** - 端到端加密
 - **证书验证** - 支持自签名和 CA 证书
 - **密钥生成** - 标准 SHA-1 + Base64 WebSocket Accept 密钥
 
 #### 3. 性能优化
+
 - **异步 I/O** - 基于 libev 事件循环
 - **零拷贝** - 高效的数据传输
 - **连接复用** - QUIC 多路复用
 - **快速握手** - 0-RTT 连接建立
 
 #### 4. 现代构建系统
+
 - **CMake 3.16+** - 现代 CMake 最佳实践
 - **构建预设** - 预定义的常用构建配置
 - **并行构建** - 多核 CPU 充分利用
@@ -350,12 +548,15 @@ Goodbye!
 ### 🐛 字节序问题修复 (2024-08-24)
 
 #### 问题描述
+
 在小端序系统（如 x86/x64）上，C 客户端与服务端通信时出现乱码问题。
 
 #### 根本原因
+
 WebSocket 协议要求使用网络字节序（大端序）处理掩码，但 C 代码在小端序系统上错误地使用了本地字节序。
 
 #### 技术细节
+
 ```c
 // ❌ 问题代码：在小端序系统上字节顺序错误
 uint32_t masking_key = 0x21bfca91;  // 网络字节序
@@ -374,12 +575,14 @@ frame->payload[i] ^= mask_bytes[i % 4];
 ```
 
 #### 影响范围
+
 - **修复文件**: `tquic_websocket_client.c`, `tquic_websocket_server.c`
 - **修复函数**: `parse_websocket_frame()`, `create_websocket_frame()`
 - **影响平台**: 所有小端序系统 (x86, x64, ARM little-endian)
 - **兼容性**: 不影响大端序系统，向后兼容
 
 #### 验证方法
+
 ```bash
 # 1. 启动 C WebSocket 服务器
 ./tquic_websocket_server 127.0.0.1 4433
@@ -415,17 +618,20 @@ cd quic-websocket && cargo run --bin server
 ### 核心技术特性
 
 #### 1. 标准协议支持
+
 - **RFC 9220** - WebSocket over HTTP/3
 - **RFC 6455** - WebSocket 协议
 - **RFC 9114** - HTTP/3 协议
 - **RFC 9000** - QUIC 传输协议
 
 #### 2. 安全特性
+
 - **TLS 1.3 加密** - 端到端加密
 - **证书验证** - 支持自签名和 CA 证书
 - **密钥生成** - 标准 SHA-1 + Base64 WebSocket Accept 密钥
 
 #### 3. 性能优化
+
 - **异步 I/O** - 基于 libev 事件循环
 - **零拷贝** - 高效的数据传输
 - **连接复用** - QUIC 多路复用
@@ -434,6 +640,7 @@ cd quic-websocket && cargo run --bin server
 ### 标准实现亮点
 
 #### 完整的 HTTP/3 头部解析
+
 ```c
 // 使用 http3_for_each_header API 遍历所有头部
 static bool is_websocket_upgrade(const struct http3_headers_t *headers, char **websocket_key) {
@@ -449,6 +656,7 @@ static bool is_websocket_upgrade(const struct http3_headers_t *headers, char **w
 ```
 
 #### 标准密钥生成实现
+
 ```c
 // 符合 RFC 6455 标准的实现
 char concatenated[256];
@@ -465,6 +673,7 @@ base64_encode(hash, 20, accept);
 ## 📊 测试结果展示
 
 ### 完整的连接建立过程
+
 ```
 🚀 服务器启动
 TQUIC WebSocket Server listening on 127.0.0.1:4433
@@ -494,6 +703,7 @@ WebSocket message sent: Hello from TQUIC WebSocket client!
 ```
 
 ### 性能指标
+
 - **连接建立时间**: < 50ms (本地)
 - **消息延迟**: < 1ms (本地)
 - **吞吐量**: > 10,000 消息/秒
@@ -505,6 +715,7 @@ WebSocket message sent: Hello from TQUIC WebSocket client!
 ### 常见问题
 
 #### 1. 编译错误
+
 ```bash
 # 错误：找不到 tquic.h
 error: tquic.h: No such file or directory
@@ -515,6 +726,7 @@ make
 ```
 
 #### 2. 证书问题
+
 ```bash
 # 错误：Failed to create TLS config
 # 解决方案：生成测试证书
@@ -522,6 +734,7 @@ openssl req -x509 -newkey rsa:2048 -keyout cert.key -out cert.crt -days 365 -nod
 ```
 
 #### 3. 连接失败
+
 ```bash
 # 错误：Connection timeout
 # 检查防火墙设置
@@ -531,6 +744,7 @@ sudo ufw allow 4433
 ```
 
 #### 4. 权限问题
+
 ```bash
 # 错误：Permission denied
 # 解决方案：使用非特权端口 (>1024)
@@ -539,11 +753,13 @@ sudo ufw allow 4433
 ```
 
 #### 5. 字节序问题 (已修复)
+
 如果遇到通信乱码，说明可能是字节序问题。当前版本已修复此问题，详见上方"重要修复历史"章节。
 
 ### 调试技巧
 
 #### 启用详细日志
+
 ```bash
 # 设置环境变量启用 TQUIC 调试日志
 export RUST_LOG=debug
@@ -554,6 +770,7 @@ export RUST_LOG=debug
 ```
 
 #### 网络抓包分析
+
 ```bash
 # 使用 tcpdump 抓包分析
 sudo tcpdump -i lo -n port 4433 -w websocket.pcap
@@ -561,6 +778,7 @@ sudo tcpdump -i lo -n port 4433 -w websocket.pcap
 ```
 
 #### 内存泄漏检查
+
 ```bash
 # 使用 Valgrind 检查内存泄漏 (CMake 调试构建)
 ./build.sh --preset debug
@@ -571,6 +789,7 @@ valgrind --leak-check=full ./tquic_websocket_server 127.0.0.1 4433
 ```
 
 #### CMake 构建故障排除
+
 ```bash
 # 查看详细构建信息
 ./build.sh --verbose
@@ -593,6 +812,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release --debug-output
 ### 核心数据结构
 
 #### WebSocket 服务器
+
 ```c
 struct websocket_server {
     struct quic_endpoint_t *quic_endpoint;  // QUIC 端点
@@ -605,6 +825,7 @@ struct websocket_server {
 ```
 
 #### WebSocket 连接
+
 ```c
 struct websocket_connection {
     struct http3_conn_t *h3_conn;          // HTTP/3 连接
@@ -619,6 +840,7 @@ struct websocket_connection {
 ### 关键函数
 
 #### 服务器 API
+
 ```c
 // 创建 WebSocket 服务器
 int websocket_server_new(const char *host, const char *port);
@@ -635,6 +857,7 @@ void send_websocket_message(struct websocket_connection *conn,
 ```
 
 #### 客户端 API
+
 ```c
 // 创建 WebSocket 客户端
 int websocket_client_new(const char *host, const char *port);
@@ -649,45 +872,124 @@ int parse_websocket_frame(const uint8_t *data, size_t len,
 
 ## 🆚 方案对比
 
-### 标准 HTTP/3 WebSocket vs 自定义 QUIC WebSocket
+### 项目架构对比
 
-| 特性 | tquic_websocket_server | quic-websocket/ |
-|------|------------------------|-----------------|
-| **协议标准** | ✅ RFC 9220 (WebSocket over HTTP/3) | ❌ 自定义 QUIC 协议 |
-| **互操作性** | ✅ 与标准 WebSocket 客户端兼容 | ❌ 仅限同类客户端 |
-| **消息格式** | ✅ 标准 WebSocket 帧 | ❌ JSON 序列化 |
-| **握手协议** | ✅ 标准 HTTP 升级 | ❌ 自定义握手 |
-| **开发语言** | C (tquic 库) | Rust (quinn 库) |
-| **性能** | 🔥 高性能 | 🔥 高性能 |
-| **功能丰富度** | 📋 基础 WebSocket 功能 | 🚀 主题订阅、服务器推送 |
-| **学习成本** | 📚 标准协议，易学习 | 📖 自定义协议，需理解 |
-| **生产就绪** | ✅ 完全符合标准 | ⚠️ 需要配套客户端 |
+| 特性                 | 基础示例                | 独立服务器                  | 分层客户端                    | 自定义 QUIC         |
+| -------------------- | ----------------------- | --------------------------- | ----------------------------- | ------------------- |
+| **项目**       | `tquic_websocket_*.c` | `tquic-websocket-server/` | `websocket-layered-client/` | `quic-websocket/` |
+| **协议标准**   | ✅ RFC 9220             | ✅ RFC 9220                 | ✅ RFC 9220                   | ❌ 自定义 QUIC      |
+| **架构复杂度** | 🟢 简单                 | 🟡 中等                     | 🔴 复杂                       | 🟡 中等             |
+| **部署方式**   | 📋 手动运行             | 🚀 systemd 服务             | 📋 手动运行                   | 📋 手动运行         |
+| **配置管理**   | ❌ 硬编码               | ✅ 配置文件                 | ✅ 配置文件                   | ✅ 配置文件         |
+| **日志系统**   | 📋 基础输出             | ✅ 结构化日志               | ✅ 分层日志                   | 📋 基础输出         |
+| **扩展性**     | ❌ 固定功能             | 🟡 配置扩展                 | ✅ 模块化扩展                 | ✅ 自定义协议       |
+| **学习价值**   | 🎯 协议理解             | 🛠️ 系统集成               | 🏗️ 架构设计                 | 🔬 协议创新         |
+| **适用场景**   | 学习和验证              | 测试部署                    | 架构学习                      | 协议研究            |
 
 ### 使用建议
 
-#### 选择标准实现 (tquic_websocket_server) 当：
-- ✅ 需要与现有 WebSocket 生态兼容
-- ✅ 要求符合 Web 标准
-- ✅ 需要浏览器支持
-- ✅ 团队熟悉 WebSocket 协议
+#### 选择基础示例 (tquic_websocket_*.c) 当：
+
+- 🎯 **学习协议** - 理解 WebSocket over HTTP/3 实现
+- ⚡ **快速验证** - 验证字节序修复和协议功能
+- 📚 **教学演示** - 展示最小化的协议实现
+- 🔧 **调试测试** - 简单直接的功能验证
+
+#### 选择独立服务器 (tquic-websocket-server/) 当：
+
+- 🚀 **测试部署** - 需要完整的服务器环境
+- 🛠️ **系统集成** - 学习 systemd 服务管理
+- 📋 **配置管理** - 需要灵活的配置和证书管理
+- 📊 **监控测试** - 需要日志和服务监控功能
+
+#### 选择分层客户端 (websocket-layered-client/) 当：
+
+- 🏗️ **架构学习** - 学习分层架构设计模式
+- 🔌 **扩展开发** - 需要开发自定义应用层
+- 📋 **消息处理** - 需要结构化的 JSON 消息系统
+- 🎯 **事件驱动** - 学习异步事件处理架构
+
+### 标准 HTTP/3 WebSocket vs 自定义 QUIC WebSocket
+
+| 特性                 | tquic_websocket_server              | quic-websocket/         |
+| -------------------- | ----------------------------------- | ----------------------- |
+| **协议标准**   | ✅ RFC 9220 (WebSocket over HTTP/3) | ❌ 自定义 QUIC 协议     |
+| **互操作性**   | ✅ 与标准 WebSocket 客户端兼容      | ❌ 仅限同类客户端       |
+| **消息格式**   | ✅ 标准 WebSocket 帧                | ❌ JSON 序列化          |
+| **握手协议**   | ✅ 标准 HTTP 升级                   | ❌ 自定义握手           |
+| **开发语言**   | C (tquic 库)                        | Rust (quinn 库)         |
+| **性能**       | 🔥 高性能                           | 🔥 高性能               |
+| **功能丰富度** | 📋 基础 WebSocket 功能              | 🚀 主题订阅、服务器推送 |
+| **学习成本**   | 📚 标准协议，易学习                 | 📖 自定义协议，需理解   |
+| **测试就绪**   | ✅ 完全符合标准                     | ⚠️ 需要配套客户端     |
+
+### 使用建议
 
 #### 选择自定义实现 (quic-websocket/) 当：
-- 🚀 需要高级功能（主题订阅、推送）
-- 🎯 完全控制协议设计
-- 📊 需要特定的性能优化
-- 🔧 可以开发配套客户端
+
+- 🚀 **高级功能** - 需要主题订阅、服务器推送
+- 🎯 **协议创新** - 完全控制协议设计
+- 📊 **性能优化** - 针对特定场景优化
+- 🔧 **配套开发** - 可以开发配套客户端
+
+### 项目组合使用建议
+
+#### 🎓 学习路径推荐
+
+```bash
+# 1. 从基础示例开始理解协议
+./tquic_websocket_server 127.0.0.1 4433
+./tquic_websocket_client 127.0.0.1 4433
+
+# 2. 体验分层架构设计
+cd websocket-layered-client && ./build.sh
+./build/bin/chat_client 127.0.0.1 4433 learner
+
+# 3. 学习系统服务集成
+cd tquic-websocket-server && ./build.sh
+sudo ./scripts/install.sh
+
+# 4. 探索协议创新
+cd quic-websocket && cargo run --bin server
+```
+
+#### 🧪 测试环境搭建
+
+```bash
+# 服务器端：使用独立服务器项目
+cd tquic-websocket-server
+sudo ./scripts/install.sh
+
+# 客户端：使用分层客户端
+cd websocket-layered-client
+./build/bin/json_client 127.0.0.1 4433 test_user
+```
+
+#### � 开发和调试
+
+```bash
+# 协议调试：使用基础示例
+./tquic_websocket_server 127.0.0.1 4433  # 简单直接
+./tquic_websocket_client 127.0.0.1 4433  # 易于修改
+
+# 架构开发：使用分层客户端
+cd websocket-layered-client
+# 在 src/applications/ 下添加新的应用层实现
+```
 
 ## 🤝 贡献指南
 
 ### 开发环境设置
 
 1. **Fork 项目**
+
 ```bash
 git clone https://github.com/your-username/tquic-example-c.git
 cd tquic-example-c
 ```
 
 2. **设置开发环境**
+
 ```bash
 # 安装开发依赖
 sudo apt install clang-format valgrind gdb cmake ninja-build
@@ -703,6 +1005,7 @@ make DEBUG=1
 ```
 
 3. **代码规范**
+
 ```bash
 # 格式化代码
 clang-format -i *.c *.h
@@ -721,11 +1024,11 @@ valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 44
 
 4. **性能对比**
 
-| 构建方式 | 首次构建时间 | 增量构建时间 | 并行支持 | 推荐用途 |
-|----------|--------------|--------------|----------|----------|
-| Makefile | ~60s | ~10s | 有限 | 简单构建 |
-| CMake + Make | ~55s | ~8s | 完整 | 开发调试 |
-| CMake + Ninja | ~45s | ~5s | 最佳 | 快速迭代 |
+| 构建方式      | 首次构建时间 | 增量构建时间 | 并行支持 | 推荐用途 |
+| ------------- | ------------ | ------------ | -------- | -------- |
+| Makefile      | ~60s         | ~10s         | 有限     | 简单构建 |
+| CMake + Make  | ~55s         | ~8s          | 完整     | 开发调试 |
+| CMake + Ninja | ~45s         | ~5s          | 最佳     | 快速迭代 |
 
 ```bash
 # 使用 Ninja 获得最快构建速度
@@ -735,6 +1038,7 @@ valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 44
 ### 提交规范
 
 #### Commit 消息格式
+
 ```
 <type>(<scope>): <description>
 
@@ -744,6 +1048,7 @@ valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 44
 ```
 
 #### 类型说明
+
 - **feat**: 新功能
 - **fix**: 错误修复
 - **docs**: 文档更新
@@ -753,6 +1058,7 @@ valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 44
 - **chore**: 构建/工具相关
 
 #### 示例
+
 ```bash
 git commit -m "feat(websocket): add interactive client support"
 git commit -m "fix(server): resolve memory leak in connection cleanup"
@@ -762,6 +1068,7 @@ git commit -m "docs(readme): update API documentation"
 ### 测试要求
 
 #### 单元测试
+
 ```bash
 # 运行所有测试
 make test
@@ -772,6 +1079,7 @@ make test
 ```
 
 #### 集成测试
+
 ```bash
 # 自动化测试脚本
 ./test_integration.sh
@@ -782,37 +1090,33 @@ make test
 
 ## 📄 许可证
 
-本项目基于 **Apache License 2.0** 开源协议。
-
-```
-Copyright (c) 2023 TQUIC WebSocket Examples
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
-## 🙏 致谢
-
-- **[TQUIC](https://github.com/Tencent/tquic)** - 腾讯开源的高性能 QUIC 库
-- **[libev](http://software.schmorp.de/pkg/libev.html)** - 高性能事件循环库
-- **[OpenSSL](https://www.openssl.org/)** - 加密和 TLS 实现
-- **WebSocket 社区** - 协议标准和最佳实践
-
-## 📞 联系方式
-
-- **Issues**: [GitHub Issues](https://github.com/your-repo/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-repo/discussions)
-- **Email**: your-email@example.com
+本项目基于 **Apache License 2.0** 开源协议。Copyright (c) 2023 TQUIC WebSocket Examples
 
 ---
+
+## 🎯 项目总结
+
+本项目提供了从**基础协议理解**到**复杂架构设计**的完整 WebSocket over HTTP/3 学习路径：
+
+### 🎓 学习价值
+
+- **📚 协议理解** - 通过基础示例理解 WebSocket over HTTP/3 核心实现
+- **🏗️ 架构设计** - 通过分层客户端学习模块化架构模式
+- **🛠️ 系统集成** - 通过独立服务器学习 systemd 服务管理
+- **🔬 协议创新** - 通过自定义 QUIC 探索协议设计思路
+
+### 🚀 技术特色
+
+- **✅ 标准兼容** - 完全符合 RFC 9220 和 RFC 6455 标准
+- **🔧 问题修复** - 解决了字节序导致的乱码问题
+- **🏗️ 分层架构** - 展示了完整的六层架构设计
+- **🧪 测试完备** - 提供了多种测试和验证方案
+
+### 🎯 适用场景
+
+- **学习研究** - WebSocket over HTTP/3 协议学习
+- **架构参考** - 分层架构设计模式参考
+- **测试验证** - QUIC WebSocket 功能测试
+- **开发基础** - 作为更复杂项目的起点
 
 **🎉 享受基于 QUIC 的下一代 WebSocket 体验！**

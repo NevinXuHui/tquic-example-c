@@ -1,6 +1,6 @@
 # TQUIC WebSocket Server
 
-基于 TQUIC (Tencent QUIC) 的高性能 WebSocket 服务器，支持 HTTP/3 和现代 QUIC 协议。
+基于 TQUIC (Tencent QUIC) 的 WebSocket 测试服务器，支持 HTTP/3 和现代 QUIC 协议。用于开发、测试和学习 WebSocket over HTTP/3 技术。
 
 ## 🚀 特性
 
@@ -124,7 +124,7 @@ worker_threads=4
 ## 🔒 安全配置
 
 ### TLS 证书
-安装脚本会自动生成自签名证书，生产环境建议使用正式证书：
+安装脚本会自动生成自签名证书，用于测试。如需正式证书可以替换：
 
 ```bash
 # 替换为你的证书
@@ -222,4 +222,4 @@ Apache License 2.0
 
 ---
 
-**🎉 享受高性能的 QUIC WebSocket 服务！**
+**🎉 享受高性能的 QUIC WebSocket 测试服务！**
