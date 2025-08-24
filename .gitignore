@@ -35,11 +35,14 @@ core
 core.*
 vgcore.*
 
-# CMake build directory
+# CMake build directories
 build/
 build-*/
 build-debug/
 build-release/
+build-websocket/
+build-ninja/
+install/
 
 # CMake generated files
 CMakeCache.txt
@@ -47,6 +50,11 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 *.cmake
+CTestTestfile.cmake
+Testing/
+
+# CMake user files
+CMakeUserPresets.json
 
 # Make generated files
 .deps/

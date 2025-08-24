@@ -77,15 +77,66 @@ source ~/.cargo/env
 
 ## 🔨 编译构建
 
-### 1. 克隆项目
+### 方法一：使用 CMake (推荐)
+
+#### 1. 克隆项目
 ```bash
 git clone <repository-url>
 cd tquic-example-c
 ```
 
-### 2. 编译所有示例
+#### 2. 使用构建脚本 (最简单)
 ```bash
+# 构建所有示例
+./build.sh
+
+# 只构建 WebSocket 示例
+./build.sh --preset websocket-only
+
+# 调试构建
+./build.sh --preset debug
+
+# 清理并重新构建
+./build.sh --clean
+
+# 构建并安装
+./build.sh --install
+
+# 查看所有选项
+./build.sh --help
+```
+
+#### 3. 手动使用 CMake
+```bash
+# 配置
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# 构建
+cmake --build build --parallel $(nproc)
+
+# 安装 (可选)
+cmake --install build
+```
+
+#### 4. 使用 CMake 预设
+```bash
+# 查看可用预设
+cmake --list-presets
+
+# 使用预设配置
+cmake --preset release
+
+# 使用预设构建
+cmake --build --preset release
+```
+
+### 方法二：使用传统 Makefile
+```bash
+# 编译所有示例
 make
+
+# 清理
+make clean
 ```
 
 ### 3. 生成测试证书
@@ -100,17 +151,25 @@ openssl req -x509 -newkey rsa:2048 -keyout cert.key -out cert.crt -days 365 -nod
 验证字节序修复是否生效：
 
 ```bash
-# 1. 编译所有程序
+# 1. 编译所有程序 (CMake)
+./build.sh
+
+# 或者使用 Makefile
 make
 
-# 2. 启动 Rust WebSocket 服务器 (终端1)
-cd quic-websocket && cargo run --bin server
+# 2. 启动 C WebSocket 服务器 (终端1)
+./build/bin/tquic_websocket_server 127.0.0.1 4433
+# 或者 Makefile 构建的版本: ./tquic_websocket_server 127.0.0.1 4433
 
 # 3. 运行 C 客户端 (终端2)
-./tquic_websocket_client 127.0.0.1 4433
+./build/bin/tquic_websocket_client 127.0.0.1 4433
+# 或者 Makefile 构建的版本: ./tquic_websocket_client 127.0.0.1 4433
 
-# 4. 预期看到清晰的文本消息，无乱码：
-# ✅ Received WebSocket text: Welcome to QUIC WebSocket Server (HTTP/3 WebSocket)!
+# 4. 或者启动 Rust WebSocket 服务器测试
+cd quic-websocket && cargo run --bin server
+
+# 5. 预期看到清晰的文本消息，无乱码：
+# ✅ Received WebSocket text: Welcome to TQUIC WebSocket Server!
 # ✅ Received WebSocket text: Hello from TQUIC WebSocket client!
 ```
 

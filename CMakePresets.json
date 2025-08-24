@@ -1,0 +1,110 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Default Configuration",
+            "description": "Default build configuration with all examples",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_WEBSOCKET_EXAMPLES": "ON",
+                "BUILD_SIMPLE_EXAMPLES": "ON",
+                "BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug Configuration",
+            "description": "Debug build with all symbols and no optimization",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_WEBSOCKET_EXAMPLES": "ON",
+                "BUILD_SIMPLE_EXAMPLES": "ON",
+                "BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release Configuration",
+            "description": "Optimized release build",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_WEBSOCKET_EXAMPLES": "ON",
+                "BUILD_SIMPLE_EXAMPLES": "ON",
+                "BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "websocket-only",
+            "displayName": "WebSocket Only",
+            "description": "Build only WebSocket examples",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-websocket",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_WEBSOCKET_EXAMPLES": "ON",
+                "BUILD_SIMPLE_EXAMPLES": "OFF",
+                "BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "ninja",
+            "displayName": "Ninja Build",
+            "description": "Fast build using Ninja generator",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_WEBSOCKET_EXAMPLES": "ON",
+                "BUILD_SIMPLE_EXAMPLES": "ON",
+                "BUILD_TESTS": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "displayName": "Build Default",
+            "description": "Build with default configuration"
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "displayName": "Build Debug",
+            "description": "Build debug version"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "displayName": "Build Release",
+            "description": "Build release version"
+        },
+        {
+            "name": "websocket-only",
+            "configurePreset": "websocket-only",
+            "displayName": "Build WebSocket Only",
+            "description": "Build only WebSocket examples"
+        },
+        {
+            "name": "ninja",
+            "configurePreset": "ninja",
+            "displayName": "Build with Ninja",
+            "description": "Fast build using Ninja"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default",
+            "configurePreset": "debug",
+            "displayName": "Run Tests",
+            "description": "Run all tests"
+        }
+    ]
+}
