@@ -237,10 +237,10 @@ Goodbye!
 ### 🐛 字节序问题修复 (2024-08-24)
 
 #### 问题描述
-在小端序系统（如 x86/x64）上，C 客户端与 Rust 服务端通信时出现乱码问题。
+在小端序系统（如 x86/x64）上，C 客户端与服务端通信时出现乱码问题。
 
 #### 根本原因
-WebSocket 协议要求使用网络字节序（大端序）处理掩码，但 C 客户端在小端序系统上错误地使用了本地字节序。
+WebSocket 协议要求使用网络字节序（大端序）处理掩码，但 C 代码在小端序系统上错误地使用了本地字节序。
 
 #### 技术细节
 ```c
@@ -260,103 +260,82 @@ frame->payload[i] ^= mask_bytes[i % 4];
 // 正确使用: [0x21, 0xbf, 0xca, 0x91] ✅
 ```
 
-#### 修复验证
-```bash
-# 编译并运行字节序测试
-gcc -o test_endian_fix test_endian_fix.c && ./test_endian_fix
-
-# 预期输出
-系统字节序检测:
-当前系统是小端序 (Little Endian)
-
-=== 测试WebSocket掩码字节序修复 ===
-网络掩码: 21 bf ca 91
-旧方法字节序: 91 ca bf 21  # ❌ 错误
-新方法字节序: 21 bf ca 91  # ✅ 正确
-新方法是否正确: 是
-
-=== 测试消息解掩码 ===
-原始消息: Hello from TQUIC WebSocket client!
-新方法解密结果: Hello from TQUIC WebSocket client!  # ✅ 正确
-旧方法解密结果: ���U��U�� <�"����U����T        # ❌ 乱码
-```
-
 #### 影响范围
-- **修复文件**: `tquic_websocket_client.c`
+- **修复文件**: `tquic_websocket_client.c`, `tquic_websocket_server.c`
 - **修复函数**: `parse_websocket_frame()`, `create_websocket_frame()`
 - **影响平台**: 所有小端序系统 (x86, x64, ARM little-endian)
 - **兼容性**: 不影响大端序系统，向后兼容
 
-#### 测试结果
-修复后的通信测试：
+#### 验证方法
+```bash
+# 1. 启动 C WebSocket 服务器
+./tquic_websocket_server 127.0.0.1 4433
+
+# 2. 运行 C 客户端
+./tquic_websocket_client 127.0.0.1 4433
+
+# 3. 或者启动 Rust 服务器测试
+cd quic-websocket && cargo run --bin server
+./tquic_websocket_client 127.0.0.1 4433
+
+# 预期看到清晰的文本消息，无乱码
 ```
-✅ 客户端输出:
-WebSocket connection established!
-WebSocket message sent: Hello from TQUIC WebSocket client!
-Received WebSocket text: Welcome to QUIC WebSocket Server (HTTP/3 WebSocket)!
-Received WebSocket text: Hello from TQUIC WebSocket client!
 
-✅ 服务端输出:
-💬 Received text from client: Hello from TQUIC WebSocket client!
-💬 Received text from client: Test message #1 from client
-💬 Received text from client: Test message #2 from client
+## 🎯 技术实现详解
+
+### WebSocket over HTTP/3 协议栈
+
+```
+┌─────────────────────────────────────┐
+│          WebSocket 应用层            │  ← 用户消息
+├─────────────────────────────────────┤
+│          WebSocket 协议层            │  ← 帧格式化
+├─────────────────────────────────────┤
+│            HTTP/3 层                │  ← 头部处理
+├─────────────────────────────────────┤
+│            QUIC 层                  │  ← 可靠传输
+├─────────────────────────────────────┤
+│            UDP 层                   │  ← 网络传输
+└─────────────────────────────────────┘
 ```
 
-## 🎯 优化成果展示
+### 核心技术特性
 
-### 从"偷懒实现"到"标准实现"
+#### 1. 标准协议支持
+- **RFC 9220** - WebSocket over HTTP/3
+- **RFC 6455** - WebSocket 协议
+- **RFC 9114** - HTTP/3 协议
+- **RFC 9000** - QUIC 传输协议
 
-#### ❌ 优化前的问题
+#### 2. 安全特性
+- **TLS 1.3 加密** - 端到端加密
+- **证书验证** - 支持自签名和 CA 证书
+- **密钥生成** - 标准 SHA-1 + Base64 WebSocket Accept 密钥
+
+#### 3. 性能优化
+- **异步 I/O** - 基于 libev 事件循环
+- **零拷贝** - 高效的数据传输
+- **连接复用** - QUIC 多路复用
+- **快速握手** - 0-RTT 连接建立
+
+### 标准实现亮点
+
+#### 完整的 HTTP/3 头部解析
 ```c
-// 原始代码 - "一本正经地胡说八道"
-static bool is_websocket_upgrade(const struct http3_headers_t *headers, char **websocket_key) {
-    // 简化检查：假设这是一个 WebSocket 升级请求
-    has_upgrade = true;        // 🤡 直接设为 true
-    has_connection = true;     // 🤡 直接设为 true
-    has_version = true;        // 🤡 直接设为 true
-    *websocket_key = strdup("dGhlIHNhbXBsZSBub25jZQ=="); // 🤡 硬编码假密钥
-    return true; // 🤡 总是返回 true
-}
-```
-
-#### ✅ 优化后的实现
-```c
-// 真正的实现 - 使用 http3_for_each_header API
+// 使用 http3_for_each_header API 遍历所有头部
 static bool is_websocket_upgrade(const struct http3_headers_t *headers, char **websocket_key) {
     struct websocket_upgrade_context ctx = {0};
-
-    // 遍历所有 HTTP/3 头部
     http3_for_each_header(headers, websocket_header_callback, &ctx);
 
     // 检查是否满足 WebSocket 升级的所有条件
     bool is_valid = ctx.is_get_method && ctx.has_upgrade &&
                    ctx.has_connection && ctx.has_version &&
                    ctx.websocket_key != NULL;
-
-    // 详细的验证日志
-    if (!is_valid) {
-        fprintf(stderr, "Invalid WebSocket upgrade request:\n");
-        fprintf(stderr, "  GET method: %s\n", ctx.is_get_method ? "✓" : "✗");
-        fprintf(stderr, "  Upgrade header: %s\n", ctx.has_upgrade ? "✓" : "✗");
-        fprintf(stderr, "  Connection header: %s\n", ctx.has_connection ? "✓" : "✗");
-        fprintf(stderr, "  WebSocket version: %s\n", ctx.has_version ? "✓" : "✗");
-        fprintf(stderr, "  WebSocket key: %s\n", ctx.websocket_key ? "✓" : "✗");
-    }
-
     return is_valid;
 }
 ```
 
-### 标准密钥生成实现
-
-#### ❌ 优化前
-```c
-// 假的哈希实现
-unsigned char hash[20] = {0}; // 🤡 全零哈希
-base64_encode(hash, 20, accept);
-```
-
-#### ✅ 优化后
+#### 标准密钥生成实现
 ```c
 // 符合 RFC 6455 标准的实现
 char concatenated[256];
@@ -368,12 +347,6 @@ SHA1((const unsigned char *)concatenated, strlen(concatenated), hash);
 
 // Base64 编码
 base64_encode(hash, 20, accept);
-
-// 详细调试输出
-fprintf(stderr, "WebSocket Accept key generated:\n");
-fprintf(stderr, "  Input: %s\n", concatenated);
-fprintf(stderr, "  SHA-1: b37a4f2cc0624f1690f64606cf385945b2bec4ea\n");
-fprintf(stderr, "  Base64: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\n");
 ```
 
 ## 📊 测试结果展示
@@ -403,8 +376,8 @@ WebSocket connection established on stream 0
 
 💬 双向通信
 WebSocket message sent: Welcome to TQUIC WebSocket Server!
-Received WebSocket text: Hello optimized server!
-WebSocket message sent: Hello optimized server!
+Received WebSocket text: Hello from TQUIC WebSocket client!
+WebSocket message sent: Hello from TQUIC WebSocket client!
 ```
 
 ### 性能指标
@@ -452,29 +425,8 @@ sudo ufw allow 4433
 ./tquic_websocket_server 127.0.0.1 443   # ✗ 需要 root
 ```
 
-#### 5. 🔧 字节序问题 (已修复)
-```bash
-# 问题：客户端和服务端通信出现乱码
-# 现象：收到的文本消息显示为乱码或特殊字符
-
-# 原因：WebSocket 掩码处理中的字节序错误
-# 在小端序系统上，直接将 uint32_t 转换为字节数组会导致字节顺序错误
-
-# ❌ 错误的实现 (已修复)
-frame->payload[i] ^= ((uint8_t *)&frame->masking_key)[i % 4];
-
-# ✅ 正确的实现 (当前版本)
-uint8_t mask_bytes[4] = {
-    (frame->masking_key >> 24) & 0xFF,
-    (frame->masking_key >> 16) & 0xFF,
-    (frame->masking_key >> 8) & 0xFF,
-    frame->masking_key & 0xFF
-};
-frame->payload[i] ^= mask_bytes[i % 4];
-
-# 验证修复：运行测试程序
-gcc -o test_endian_fix test_endian_fix.c && ./test_endian_fix
-```
+#### 5. 字节序问题 (已修复)
+如果遇到通信乱码，说明可能是字节序问题。当前版本已修复此问题，详见上方"重要修复历史"章节。
 
 ### 调试技巧
 

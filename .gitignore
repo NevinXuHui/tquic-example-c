@@ -1,8 +1,39 @@
-# Executables
+# C/C++ Executables
 simple_server
 simple_client
 simple_h3_server
 simple_h3_client
+tquic_websocket_server
+tquic_websocket_client
+tquic_websocket_interactive_client
+
+# Test executables
+test_*
+benchmark_*
+
+# C/C++ Compilation artifacts
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exe
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.gch
+*.pch
+
+# Core dumps
+core
+core.*
+vgcore.*
 
 # CMake build directory
 build/
@@ -17,6 +48,10 @@ cmake_install.cmake
 Makefile
 *.cmake
 
+# Make generated files
+.deps/
+.dirstamp
+
 # IDE files
 .idea/
 *.swp
@@ -30,6 +65,64 @@ Makefile
 .history/
 *.lh
 
+# Rust build artifacts (for quic-websocket/)
+quic-websocket/target/
+quic-websocket/Cargo.lock
+
+# Certificates and keys
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+cert.*
+key.*
+ca-*
+
+# Log files
+*.log
+*.out
+*.err
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# Network capture files
+*.pcap
+*.pcapng
+
+# Valgrind output
+valgrind-out.*
+*.memcheck
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+coverage/
+*.info
+
 # OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
