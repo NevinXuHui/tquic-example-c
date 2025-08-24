@@ -268,6 +268,45 @@ static void on_websocket_event(const ws_event_t *event, void *user_data) {
     pthread_mutex_unlock(&client->mutex);
 }
 
+// 消息事件处理器
+static void on_message_event(const message_event_t *event, void *user_data) {
+    layered_websocket_client_t *client = (layered_websocket_client_t *)user_data;
+    if (!client) return;
+
+    // 处理消息事件
+    switch (event->type) {
+        case MSG_EVENT_SENT:
+            // 消息发送成功
+            break;
+
+        case MSG_EVENT_ERROR:
+            // 消息发送失败
+            break;
+
+        case MSG_EVENT_RECEIVED:
+            // 收到消息，转发给业务层
+            if (client->business_logic) {
+                business_logic_on_message_event(client->business_logic, event);
+            }
+            break;
+
+        case MSG_EVENT_TIMEOUT:
+            // 消息超时
+            break;
+
+        case MSG_EVENT_QUEUE_FULL:
+            // 队列满
+            break;
+
+        case MSG_EVENT_QUEUE_EMPTY:
+            // 队列空
+            break;
+
+        default:
+            break;
+    }
+}
+
 // 业务事件处理器
 static void on_business_event(const business_event_t *event, void *user_data) {
     layered_websocket_client_t *client = (layered_websocket_client_t *)user_data;
@@ -338,18 +377,22 @@ layered_websocket_client_t *layered_client_create(const client_config_t *config,
     }
     
     // 创建各层组件
-    
+
     // 1. 事件系统
+    printf("正在创建事件系统...\n");
     event_system_config_t event_config = event_system_config_default();
     event_config.worker_thread_count = config->worker_threads;
     event_config.enable_priority_queue = config->enable_priority_queue;
     client->event_system = event_system_create(&event_config);
     if (!client->event_system) {
+        printf("❌ 事件系统创建失败\n");
         layered_client_destroy(client);
         return NULL;
     }
+    printf("✅ 事件系统创建成功\n");
     
     // 2. WebSocket 协议层
+    printf("正在创建 WebSocket 协议层...\n");
     ws_config_t ws_config = ws_config_default();
     ws_config.host = config->host;
     ws_config.port = config->port;
@@ -358,25 +401,31 @@ layered_websocket_client_t *layered_client_create(const client_config_t *config,
     ws_config.connect_timeout_ms = config->connect_timeout_ms;
     ws_config.ping_interval_ms = config->heartbeat_interval_ms;
     ws_config.auto_reconnect = false; // 由客户端层管理重连
-    
+
     client->ws_conn = ws_connection_create(&ws_config, on_websocket_event, client);
     if (!client->ws_conn) {
+        printf("❌ WebSocket 协议层创建失败\n");
         layered_client_destroy(client);
         return NULL;
     }
+    printf("✅ WebSocket 协议层创建成功\n");
     
     // 3. 消息处理层
+    printf("正在创建消息处理层...\n");
     message_handler_config_t msg_config = message_handler_config_default();
     msg_config.max_queue_size = config->message_queue_size;
     msg_config.default_timeout_ms = config->response_timeout_ms;
-    
-    client->msg_handler = message_handler_create(&msg_config, NULL, client);
+
+    client->msg_handler = message_handler_create(&msg_config, on_message_event, client);
     if (!client->msg_handler) {
+        printf("❌ 消息处理层创建失败\n");
         layered_client_destroy(client);
         return NULL;
     }
+    printf("✅ 消息处理层创建成功\n");
     
     // 4. 业务逻辑层
+    printf("正在创建业务逻辑层...\n");
     business_config_t biz_config = business_config_default();
     biz_config.client_id = config->client_id;
     biz_config.client_version = config->client_version;
@@ -384,12 +433,14 @@ layered_websocket_client_t *layered_client_create(const client_config_t *config,
     biz_config.response_timeout_ms = config->response_timeout_ms;
     biz_config.auto_reconnect = config->auto_reconnect;
     biz_config.enable_logging = config->enable_logging;
-    
+
     client->business_logic = business_logic_create(&biz_config, on_business_event, client);
     if (!client->business_logic) {
+        printf("❌ 业务逻辑层创建失败\n");
         layered_client_destroy(client);
         return NULL;
     }
+    printf("✅ 业务逻辑层创建成功\n");
     
     // 连接各层
     ws_connection_set_event_loop(client->ws_conn, client->loop);

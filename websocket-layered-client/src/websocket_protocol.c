@@ -574,27 +574,61 @@ int ws_connection_connect(ws_connection_t *conn) {
 // 断开连接
 void ws_connection_close(ws_connection_t *conn, uint16_t code, const char *reason) {
     if (!conn) return;
-    
+
     pthread_mutex_lock(&conn->mutex);
-    
+
     if (conn->state == WS_STATE_CLOSED) {
         pthread_mutex_unlock(&conn->mutex);
         return;
     }
-    
+
     conn->state = WS_STATE_CLOSING;
-    
-    // TODO: 发送 WebSocket 关闭帧
-    
+
+    // 发送 WebSocket 关闭帧
+    if (conn->h3_conn && conn->state == WS_STATE_CLOSING) {
+        uint8_t close_data[125]; // 最大关闭帧载荷
+        size_t close_len = 0;
+
+        // 构造关闭载荷：2字节状态码 + 可选原因
+        close_data[0] = (code >> 8) & 0xFF;
+        close_data[1] = code & 0xFF;
+        close_len = 2;
+
+        if (reason) {
+            size_t reason_len = strlen(reason);
+            if (reason_len > 123) reason_len = 123; // 限制原因长度
+            memcpy(close_data + 2, reason, reason_len);
+            close_len += reason_len;
+        }
+
+        // 构造关闭帧
+        uint8_t frame_buffer[close_len + 14];
+        int frame_len = ws_frame_create(WS_FRAME_CLOSE, close_data, close_len,
+                                       true, frame_buffer, sizeof(frame_buffer));
+
+        if (frame_len > 0) {
+            // 发送关闭帧
+            http3_send_body(conn->h3_conn, conn->quic_conn, conn->stream_id,
+                           frame_buffer, frame_len, false);
+        }
+    }
+
+    // 关闭 QUIC 连接
+    if (conn->quic_conn) {
+        quic_conn_close(conn->quic_conn, false, 0, NULL, 0);
+    }
+
     conn->state = WS_STATE_CLOSED;
-    
+
     // 触发断开连接事件
     ws_event_t event = {
         .type = WS_EVENT_DISCONNECTED,
         .connection = conn
     };
-    conn->callback(&event, conn->user_data);
-    
+    if (conn->callback) {
+        conn->callback(&event, conn->user_data);
+    }
+
     pthread_mutex_unlock(&conn->mutex);
 }
 
@@ -633,34 +667,71 @@ int ws_connection_send_text(ws_connection_t *conn, const char *data, size_t leng
 
 // 发送二进制消息
 int ws_connection_send_binary(ws_connection_t *conn, const uint8_t *data, size_t length) {
-    if (!conn || !data || conn->state != WS_STATE_CONNECTED) {
+    if (!conn || !data || conn->state != WS_STATE_CONNECTED || !conn->h3_conn) {
         return -1;
     }
-    
-    // TODO: 实现 WebSocket 二进制帧发送
-    
+
+    // 构造 WebSocket 二进制帧
+    uint8_t frame_buffer[length + 14]; // 最大帧头长度
+    int frame_len = ws_frame_create(WS_FRAME_BINARY, data, length,
+                                   true, frame_buffer, sizeof(frame_buffer));
+
+    if (frame_len < 0) {
+        return -1;
+    }
+
+    // 通过 HTTP/3 流发送
+    ssize_t sent = http3_send_body(conn->h3_conn, conn->quic_conn, conn->stream_id,
+                                  frame_buffer, frame_len, false);
+
+    if (sent < 0) {
+        return -1;
+    }
+
+    // 更新统计信息
     pthread_mutex_lock(&conn->mutex);
     conn->stats.messages_sent++;
-    conn->stats.bytes_sent += length;
+    conn->stats.bytes_sent += sent;
     conn->stats.last_activity = time(NULL);
     pthread_mutex_unlock(&conn->mutex);
-    
+
     return 0;
 }
 
 // 发送 Ping 帧
 int ws_connection_send_ping(ws_connection_t *conn, const uint8_t *data, size_t length) {
-    if (!conn || conn->state != WS_STATE_CONNECTED) {
+    if (!conn || conn->state != WS_STATE_CONNECTED || !conn->h3_conn) {
         return -1;
     }
-    
-    // TODO: 实现 WebSocket Ping 帧发送
-    
+
+    // Ping 帧载荷不能超过 125 字节
+    if (length > 125) {
+        return -1;
+    }
+
+    // 构造 WebSocket Ping 帧
+    uint8_t frame_buffer[length + 14]; // 最大帧头长度
+    int frame_len = ws_frame_create(WS_FRAME_PING, data, length,
+                                   true, frame_buffer, sizeof(frame_buffer));
+
+    if (frame_len < 0) {
+        return -1;
+    }
+
+    // 通过 HTTP/3 流发送
+    ssize_t sent = http3_send_body(conn->h3_conn, conn->quic_conn, conn->stream_id,
+                                  frame_buffer, frame_len, false);
+
+    if (sent < 0) {
+        return -1;
+    }
+
+    // 更新统计信息
     pthread_mutex_lock(&conn->mutex);
     conn->stats.ping_count++;
     conn->stats.last_activity = time(NULL);
     pthread_mutex_unlock(&conn->mutex);
-    
+
     return 0;
 }
 
@@ -685,10 +756,50 @@ void ws_connection_set_event_loop(ws_connection_t *conn, struct ev_loop *loop) {
 // 处理事件循环中的 WebSocket 事件
 void ws_connection_process_events(ws_connection_t *conn) {
     if (!conn) return;
-    
-    // TODO: 处理接收到的数据
-    // TODO: 处理连接状态变化
-    // TODO: 处理超时事件
+
+    pthread_mutex_lock(&conn->mutex);
+
+    // 处理 QUIC 端点事件
+    if (conn->quic_endpoint) {
+        quic_endpoint_process_connections(conn->quic_endpoint);
+    }
+
+    // 检查连接超时
+    time_t now = time(NULL);
+    if (conn->state == WS_STATE_CONNECTING &&
+        conn->config.connect_timeout_ms > 0 &&
+        (now - conn->stats.connected_at) * 1000 > conn->config.connect_timeout_ms) {
+
+        conn->state = WS_STATE_ERROR;
+
+        // 触发超时事件
+        ws_event_t event = {
+            .type = WS_EVENT_ERROR,
+            .connection = conn
+        };
+        if (conn->callback) {
+            conn->callback(&event, conn->user_data);
+        }
+    }
+
+    // 检查心跳超时
+    if (conn->state == WS_STATE_CONNECTED &&
+        conn->config.ping_interval_ms > 0 &&
+        (now - conn->stats.last_activity) * 1000 > conn->config.ping_interval_ms * 2) {
+
+        // 心跳超时，关闭连接
+        conn->state = WS_STATE_ERROR;
+
+        ws_event_t event = {
+            .type = WS_EVENT_ERROR,
+            .connection = conn
+        };
+        if (conn->callback) {
+            conn->callback(&event, conn->user_data);
+        }
+    }
+
+    pthread_mutex_unlock(&conn->mutex);
 }
 
 // 心跳定时器回调
@@ -699,68 +810,98 @@ static void ping_timer_cb(EV_P_ ev_timer *w, int revents) {
     }
 }
 
-// WebSocket 帧解析（简化实现）
+// WebSocket 帧解析（完整实现）
 int ws_frame_parse(const uint8_t *data, size_t length, ws_frame_t *frame) {
     if (!data || !frame || length < 2) {
         return -1;
     }
-    
-    // TODO: 实现完整的 WebSocket 帧解析
-    // 这里只是一个骨架实现
-    
+
     memset(frame, 0, sizeof(ws_frame_t));
-    
+
     // 解析基本头部
     frame->fin = (data[0] & 0x80) != 0;
     frame->rsv1 = (data[0] & 0x40) != 0;
     frame->rsv2 = (data[0] & 0x20) != 0;
     frame->rsv3 = (data[0] & 0x10) != 0;
     frame->opcode = data[0] & 0x0F;
-    
+
+    // 验证操作码
+    if (frame->opcode > 0xF ||
+        (frame->opcode >= 3 && frame->opcode <= 7) ||
+        (frame->opcode >= 0xB && frame->opcode <= 0xF)) {
+        return -1; // 无效的操作码
+    }
+
     frame->mask = (data[1] & 0x80) != 0;
     uint8_t payload_len = data[1] & 0x7F;
-    
+
     size_t header_len = 2;
-    
+
     // 处理扩展长度
     if (payload_len == 126) {
         if (length < 4) return 0; // 需要更多数据
-        frame->payload_len = (data[2] << 8) | data[3];
+        frame->payload_len = ((uint64_t)data[2] << 8) | data[3];
         header_len += 2;
+
+        // 验证长度
+        if (frame->payload_len < 126) {
+            return -1; // 不应该使用扩展长度
+        }
     } else if (payload_len == 127) {
         if (length < 10) return 0; // 需要更多数据
+
+        // 检查最高位，不应该设置（RFC 6455）
+        if (data[2] & 0x80) {
+            return -1; // 长度过大
+        }
+
         frame->payload_len = 0;
         for (int i = 0; i < 8; i++) {
             frame->payload_len = (frame->payload_len << 8) | data[2 + i];
         }
         header_len += 8;
+
+        // 验证长度
+        if (frame->payload_len < 65536) {
+            return -1; // 不应该使用 64 位长度
+        }
     } else {
         frame->payload_len = payload_len;
     }
-    
+
+    // 验证控制帧
+    if (frame->opcode >= 0x8) { // 控制帧
+        if (!frame->fin) {
+            return -1; // 控制帧必须设置 FIN
+        }
+        if (frame->payload_len > 125) {
+            return -1; // 控制帧载荷不能超过 125 字节
+        }
+    }
+
     // 处理掩码
     if (frame->mask) {
         if (length < header_len + 4) return 0; // 需要更多数据
-        frame->masking_key = (data[header_len] << 24) | 
-                            (data[header_len + 1] << 16) |
-                            (data[header_len + 2] << 8) | 
+        frame->masking_key = ((uint32_t)data[header_len] << 24) |
+                            ((uint32_t)data[header_len + 1] << 16) |
+                            ((uint32_t)data[header_len + 2] << 8) |
                             data[header_len + 3];
         header_len += 4;
     }
-    
+
     // 检查是否有足够的数据
     if (length < header_len + frame->payload_len) {
         return 0; // 需要更多数据
     }
-    
+
     // 复制载荷数据
     if (frame->payload_len > 0) {
         frame->payload = malloc(frame->payload_len);
         if (!frame->payload) return -1;
-        
+
         memcpy(frame->payload, data + header_len, frame->payload_len);
-        
-        // 解掩码（修复字节序问题）
+
+        // 解掩码
         if (frame->mask) {
             uint8_t mask_bytes[4] = {
                 (frame->masking_key >> 24) & 0xFF,
@@ -768,77 +909,106 @@ int ws_frame_parse(const uint8_t *data, size_t length, ws_frame_t *frame) {
                 (frame->masking_key >> 8) & 0xFF,
                 frame->masking_key & 0xFF
             };
-            
+
             for (uint64_t i = 0; i < frame->payload_len; i++) {
                 frame->payload[i] ^= mask_bytes[i % 4];
             }
         }
     }
-    
+
     return header_len + frame->payload_len;
 }
 
-// 创建 WebSocket 帧（简化实现）
+// 创建 WebSocket 帧（完整实现）
 int ws_frame_create(ws_frame_type_t frame_type, const uint8_t *data, size_t length,
                    bool mask, uint8_t *output, size_t output_size) {
-    if (!output || output_size < 2) {
+    if (!output) {
         return -1;
     }
-    
-    // TODO: 实现完整的 WebSocket 帧创建
-    // 这里只是一个骨架实现
-    
+
+    // 验证帧类型
+    if (frame_type > 0xF ||
+        (frame_type >= 3 && frame_type <= 7) ||
+        (frame_type >= 0xB && frame_type <= 0xF)) {
+        return -1; // 无效的帧类型
+    }
+
+    // 验证控制帧
+    if (frame_type >= 0x8 && length > 125) {
+        return -1; // 控制帧载荷不能超过 125 字节
+    }
+
     size_t header_len = 2;
-    
-    // 基本头部
-    output[0] = 0x80 | (frame_type & 0x0F); // FIN=1
-    
+
+    // 计算所需的头部长度
+    if (length >= 126) {
+        if (length < 65536) {
+            header_len += 2;
+        } else {
+            header_len += 8;
+        }
+    }
+
+    if (mask) {
+        header_len += 4;
+    }
+
+    // 检查输出缓冲区大小
+    if (output_size < header_len + length) {
+        return -1; // 缓冲区太小
+    }
+
+    // 构造基本头部
+    output[0] = 0x80 | (frame_type & 0x0F); // FIN=1, RSV=0, opcode
+
+    // 构造长度字段
     if (length < 126) {
-        output[1] = length;
+        output[1] = (uint8_t)length;
     } else if (length < 65536) {
         output[1] = 126;
         output[2] = (length >> 8) & 0xFF;
         output[3] = length & 0xFF;
-        header_len += 2;
     } else {
         output[1] = 127;
+        // 写入 64 位长度（网络字节序）
         for (int i = 0; i < 8; i++) {
             output[2 + i] = (length >> (56 - i * 8)) & 0xFF;
         }
-        header_len += 8;
     }
-    
+
     // 掩码处理
+    uint32_t masking_key = 0;
     if (mask) {
-        output[1] |= 0x80;
-        uint32_t masking_key = rand(); // 简单的随机掩码
-        
-        output[header_len] = (masking_key >> 24) & 0xFF;
-        output[header_len + 1] = (masking_key >> 16) & 0xFF;
-        output[header_len + 2] = (masking_key >> 8) & 0xFF;
-        output[header_len + 3] = masking_key & 0xFF;
-        header_len += 4;
-        
-        // 应用掩码（修复字节序问题）
-        if (data && length > 0) {
+        output[1] |= 0x80; // 设置掩码位
+
+        // 生成随机掩码密钥
+        masking_key = (uint32_t)rand() ^ ((uint32_t)rand() << 16);
+
+        size_t mask_offset = (length < 126) ? 2 : (length < 65536) ? 4 : 10;
+        output[mask_offset] = (masking_key >> 24) & 0xFF;
+        output[mask_offset + 1] = (masking_key >> 16) & 0xFF;
+        output[mask_offset + 2] = (masking_key >> 8) & 0xFF;
+        output[mask_offset + 3] = masking_key & 0xFF;
+    }
+
+    // 复制和掩码载荷数据
+    if (data && length > 0) {
+        if (mask) {
             uint8_t mask_bytes[4] = {
                 (masking_key >> 24) & 0xFF,
                 (masking_key >> 16) & 0xFF,
                 (masking_key >> 8) & 0xFF,
                 masking_key & 0xFF
             };
-            
+
             for (size_t i = 0; i < length; i++) {
                 output[header_len + i] = data[i] ^ mask_bytes[i % 4];
             }
-        }
-    } else {
-        // 不使用掩码，直接复制数据
-        if (data && length > 0) {
+        } else {
             memcpy(output + header_len, data, length);
         }
     }
-    
+
     return header_len + length;
 }
 

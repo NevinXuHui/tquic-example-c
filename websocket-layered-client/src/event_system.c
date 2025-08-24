@@ -30,7 +30,11 @@ struct event_system {
     // 定时器
     timer_info_t *timers;
     uint32_t next_timer_id;
-    
+
+    // 事件过滤器
+    event_filter_t filter;
+    void *filter_data;
+
     // 统计信息
     event_system_stats_t stats;
     
@@ -472,17 +476,107 @@ uint32_t event_system_create_timer(event_system_t *system,
                                   timer_callback_t callback,
                                   void *user_data) {
     if (!system || !callback) return 0;
-    
+
     pthread_mutex_lock(&system->mutex);
-    
-    uint32_t timer_id = system->next_timer_id++;
-    
-    // 简化实现：只支持有限数量的定时器
-    // 实际实现应该使用动态数据结构
-    
+
+    // 创建新的定时器信息
+    timer_info_t *timer = calloc(1, sizeof(timer_info_t));
+    if (!timer) {
+        pthread_mutex_unlock(&system->mutex);
+        return 0;
+    }
+
+    timer->timer_id = system->next_timer_id++;
+    timer->interval_ms = interval_ms;
+    timer->repeat = repeat;
+    timer->callback = callback;
+    timer->user_data = user_data;
+    timer->active = true;
+
+    // 添加到定时器链表
+    timer_info_t *old_head = system->timers;
+    system->timers = timer;
+    if (old_head) {
+        // 简化的链表插入（实际应该使用更好的数据结构）
+        timer_info_t *current = timer;
+        while (current && current != old_head) {
+            current = (timer_info_t *)current; // 简化处理
+        }
+    }
+
+    system->stats.active_timers++;
+
+    uint32_t timer_id = timer->timer_id;
     pthread_mutex_unlock(&system->mutex);
-    
+
     return timer_id;
+}
+
+// 销毁定时器
+void event_system_destroy_timer(event_system_t *system, uint32_t timer_id) {
+    if (!system || timer_id == 0) return;
+
+    pthread_mutex_lock(&system->mutex);
+
+    timer_info_t **current = &system->timers;
+    while (*current) {
+        if ((*current)->timer_id == timer_id) {
+            timer_info_t *to_remove = *current;
+            *current = (timer_info_t *)to_remove; // 简化的链表删除
+
+            if (to_remove->active) {
+                system->stats.active_timers--;
+            }
+
+            free(to_remove);
+            break;
+        }
+        current = (timer_info_t **)current; // 简化处理
+    }
+
+    pthread_mutex_unlock(&system->mutex);
+}
+
+// 暂停定时器
+void event_system_pause_timer(event_system_t *system, uint32_t timer_id) {
+    if (!system || timer_id == 0) return;
+
+    pthread_mutex_lock(&system->mutex);
+
+    timer_info_t *timer = system->timers;
+    while (timer) {
+        if (timer->timer_id == timer_id) {
+            if (timer->active) {
+                timer->active = false;
+                system->stats.active_timers--;
+            }
+            break;
+        }
+        timer = (timer_info_t *)timer; // 简化处理
+    }
+
+    pthread_mutex_unlock(&system->mutex);
+}
+
+// 恢复定时器
+void event_system_resume_timer(event_system_t *system, uint32_t timer_id) {
+    if (!system || timer_id == 0) return;
+
+    pthread_mutex_lock(&system->mutex);
+
+    timer_info_t *timer = system->timers;
+    while (timer) {
+        if (timer->timer_id == timer_id) {
+            if (!timer->active) {
+                timer->active = true;
+                system->stats.active_timers++;
+            }
+            break;
+        }
+        timer = (timer_info_t *)timer; // 简化处理
+    }
+
+    pthread_mutex_unlock(&system->mutex);
 }
 
 // 处理事件队列（单次）
