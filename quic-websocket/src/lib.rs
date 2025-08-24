@@ -72,6 +72,8 @@ pub mod client;
 pub mod handler;
 pub mod message;
 pub mod server;
+pub mod websocket;
+pub mod h3_server;
 
 // Re-export main types for convenience
 pub use client::{ClientConnection, ClientManager, ClientState};

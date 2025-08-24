@@ -19,6 +19,7 @@ Advanced C examples of using [TQUIC](https://github.com/Tencent/tquic) on Linux,
 - **标准密钥生成** - 使用 OpenSSL SHA-1 + Base64
 - **双向实时通信** - 支持文本/二进制消息
 - **交互式客户端** - 用户友好的命令行界面
+- **🔧 字节序修复** - 已解决小端序系统上的乱码问题
 
 ### 🔧 技术亮点
 - **QUIC 协议** - 基于 UDP 的可靠传输
@@ -93,6 +94,25 @@ openssl req -x509 -newkey rsa:2048 -keyout cert.key -out cert.crt -days 365 -nod
 ```
 
 ## 🚀 快速开始
+
+### ⚡ 快速验证修复 (推荐)
+
+验证字节序修复是否生效：
+
+```bash
+# 1. 编译所有程序
+make
+
+# 2. 启动 Rust WebSocket 服务器 (终端1)
+cd quic-websocket && cargo run --bin server
+
+# 3. 运行 C 客户端 (终端2)
+./tquic_websocket_client 127.0.0.1 4433
+
+# 4. 预期看到清晰的文本消息，无乱码：
+# ✅ Received WebSocket text: Welcome to QUIC WebSocket Server (HTTP/3 WebSocket)!
+# ✅ Received WebSocket text: Hello from TQUIC WebSocket client!
+```
 
 ### 基础 QUIC 示例
 
@@ -211,6 +231,76 @@ Goodbye!
 - **零拷贝** - 高效的数据传输
 - **连接复用** - QUIC 多路复用
 - **快速握手** - 0-RTT 连接建立
+
+## 🔧 重要修复历史
+
+### 🐛 字节序问题修复 (2024-08-24)
+
+#### 问题描述
+在小端序系统（如 x86/x64）上，C 客户端与 Rust 服务端通信时出现乱码问题。
+
+#### 根本原因
+WebSocket 协议要求使用网络字节序（大端序）处理掩码，但 C 客户端在小端序系统上错误地使用了本地字节序。
+
+#### 技术细节
+```c
+// ❌ 问题代码：在小端序系统上字节顺序错误
+uint32_t masking_key = 0x21bfca91;  // 网络字节序
+frame->payload[i] ^= ((uint8_t *)&masking_key)[i % 4];
+// 在小端序系统上实际使用: [0x91, 0xca, 0xbf, 0x21] ❌
+
+// ✅ 修复代码：显式转换为正确字节序
+uint8_t mask_bytes[4] = {
+    (masking_key >> 24) & 0xFF,  // 0x21
+    (masking_key >> 16) & 0xFF,  // 0xbf
+    (masking_key >> 8) & 0xFF,   // 0xca
+    masking_key & 0xFF           // 0x91
+};
+frame->payload[i] ^= mask_bytes[i % 4];
+// 正确使用: [0x21, 0xbf, 0xca, 0x91] ✅
+```
+
+#### 修复验证
+```bash
+# 编译并运行字节序测试
+gcc -o test_endian_fix test_endian_fix.c && ./test_endian_fix
+
+# 预期输出
+系统字节序检测:
+当前系统是小端序 (Little Endian)
+
+=== 测试WebSocket掩码字节序修复 ===
+网络掩码: 21 bf ca 91
+旧方法字节序: 91 ca bf 21  # ❌ 错误
+新方法字节序: 21 bf ca 91  # ✅ 正确
+新方法是否正确: 是
+
+=== 测试消息解掩码 ===
+原始消息: Hello from TQUIC WebSocket client!
+新方法解密结果: Hello from TQUIC WebSocket client!  # ✅ 正确
+旧方法解密结果: ���U��U�� <�"����U����T        # ❌ 乱码
+```
+
+#### 影响范围
+- **修复文件**: `tquic_websocket_client.c`
+- **修复函数**: `parse_websocket_frame()`, `create_websocket_frame()`
+- **影响平台**: 所有小端序系统 (x86, x64, ARM little-endian)
+- **兼容性**: 不影响大端序系统，向后兼容
+
+#### 测试结果
+修复后的通信测试：
+```
+✅ 客户端输出:
+WebSocket connection established!
+WebSocket message sent: Hello from TQUIC WebSocket client!
+Received WebSocket text: Welcome to QUIC WebSocket Server (HTTP/3 WebSocket)!
+Received WebSocket text: Hello from TQUIC WebSocket client!
+
+✅ 服务端输出:
+💬 Received text from client: Hello from TQUIC WebSocket client!
+💬 Received text from client: Test message #1 from client
+💬 Received text from client: Test message #2 from client
+```
 
 ## 🎯 优化成果展示
 
@@ -360,6 +450,30 @@ sudo ufw allow 4433
 # 解决方案：使用非特权端口 (>1024)
 ./tquic_websocket_server 127.0.0.1 4433  # ✓ 正确
 ./tquic_websocket_server 127.0.0.1 443   # ✗ 需要 root
+```
+
+#### 5. 🔧 字节序问题 (已修复)
+```bash
+# 问题：客户端和服务端通信出现乱码
+# 现象：收到的文本消息显示为乱码或特殊字符
+
+# 原因：WebSocket 掩码处理中的字节序错误
+# 在小端序系统上，直接将 uint32_t 转换为字节数组会导致字节顺序错误
+
+# ❌ 错误的实现 (已修复)
+frame->payload[i] ^= ((uint8_t *)&frame->masking_key)[i % 4];
+
+# ✅ 正确的实现 (当前版本)
+uint8_t mask_bytes[4] = {
+    (frame->masking_key >> 24) & 0xFF,
+    (frame->masking_key >> 16) & 0xFF,
+    (frame->masking_key >> 8) & 0xFF,
+    frame->masking_key & 0xFF
+};
+frame->payload[i] ^= mask_bytes[i % 4];
+
+# 验证修复：运行测试程序
+gcc -o test_endian_fix test_endian_fix.c && ./test_endian_fix
 ```
 
 ### 调试技巧

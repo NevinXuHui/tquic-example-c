@@ -498,8 +498,8 @@ pub fn create_server_config(cert_path: &str, key_path: &str) -> Result<ServerCon
         .with_no_client_auth()
         .with_single_cert(certs, key)?;
 
-    // 设置 ALPN 协议
-    tls_config.alpn_protocols = vec![b"quic-websocket".to_vec()];
+    // 设置 ALPN 协议 (与 TQUIC 兼容)
+    tls_config.alpn_protocols = vec![b"h3".to_vec()];
 
     // 创建 QUIC 服务器配置
     let mut server_config = ServerConfig::with_crypto(Arc::new(tls_config));

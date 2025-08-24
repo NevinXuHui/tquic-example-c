@@ -190,10 +190,18 @@ static int parse_websocket_frame(const uint8_t *data, size_t len, struct websock
     
     frame->payload = (uint8_t *)(data + header_len);
     
-    // 解掩码
+    // 解掩码 - 修复字节序问题
     if (frame->mask) {
+        // 将masking_key转换为正确的字节序
+        uint8_t mask_bytes[4] = {
+            (frame->masking_key >> 24) & 0xFF,
+            (frame->masking_key >> 16) & 0xFF,
+            (frame->masking_key >> 8) & 0xFF,
+            frame->masking_key & 0xFF
+        };
+
         for (uint64_t i = 0; i < frame->payload_len; i++) {
-            frame->payload[i] ^= ((uint8_t *)&frame->masking_key)[i % 4];
+            frame->payload[i] ^= mask_bytes[i % 4];
         }
     }
     
