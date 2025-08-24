@@ -1,0 +1,37 @@
+[Unit]
+Description=TQUIC WebSocket Server
+Documentation=https://github.com/tencent/tquic
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tquic-ws
+Group=tquic-ws
+WorkingDirectory=/opt/tquic-websocket-server
+ExecStart=/usr/local/bin/tquic-websocket-server 0.0.0.0 4433
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tquic-websocket-server
+
+# 安全配置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/tquic-websocket-server
+ReadOnlyPaths=/etc/tquic-websocket-server
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 环境变量
+Environment=RUST_LOG=info
+Environment=TQUIC_LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target
