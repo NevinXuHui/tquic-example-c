@@ -161,9 +161,18 @@ if [[ ! -f "$TQUIC_LIB" ]]; then
 fi
 
 # 检查系统依赖
-check_dependency() {
-    if ! pkg-config --exists "$1"; then
-        print_error "缺少依赖: $1"
+check_header() {
+    if ! echo "#include <$1>" | gcc -E - >/dev/null 2>&1; then
+        print_error "缺少头文件: $1"
+        print_info "请安装: sudo apt install $2"
+        return 1
+    fi
+    return 0
+}
+
+check_library() {
+    if ! echo "int main(){return 0;}" | gcc -l$1 -xc - -o /dev/null >/dev/null 2>&1; then
+        print_error "缺少库文件: lib$1"
         print_info "请安装: sudo apt install $2"
         return 1
     fi
@@ -171,8 +180,10 @@ check_dependency() {
 }
 
 DEPS_OK=true
-check_dependency "libev" "libev-dev" || DEPS_OK=false
-check_dependency "libcjson" "libcjson-dev" || DEPS_OK=false
+check_header "ev.h" "libev-dev" || DEPS_OK=false
+check_header "cjson/cJSON.h" "libcjson-dev" || DEPS_OK=false
+check_library "ev" "libev-dev" || DEPS_OK=false
+check_library "cjson" "libcjson-dev" || DEPS_OK=false
 
 if [[ "$DEPS_OK" != true ]]; then
     print_error "请安装缺少的依赖后重试"

@@ -17,6 +17,11 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+#include <time.h>
+
+// 前向声明
+static void ping_timer_cb(EV_P_ ev_timer *w, int revents);
 
 // WebSocket 连接结构体
 struct ws_connection {
@@ -191,7 +196,6 @@ int ws_connection_connect(ws_connection_t *conn) {
     
     // 临时实现：模拟连接成功
     conn->state = WS_STATE_CONNECTED;
-    conn->stats.successful_connections++;
     conn->stats.connected_at = time(NULL);
     
     // 触发连接成功事件
@@ -321,7 +325,7 @@ void ws_connection_process_events(ws_connection_t *conn) {
     // TODO: 处理超时事件
 }
 
-// 心跳定时器回调（需要实现）
+// 心跳定时器回调
 static void ping_timer_cb(EV_P_ ev_timer *w, int revents) {
     ws_connection_t *conn = (ws_connection_t *)w->data;
     if (conn && conn->state == WS_STATE_CONNECTED) {
