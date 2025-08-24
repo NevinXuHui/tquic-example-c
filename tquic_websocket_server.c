@@ -30,6 +30,7 @@
 #include "openssl/pem.h"
 #include "openssl/ssl.h"
 #include "openssl/x509.h"
+#include "openssl/sha.h"
 #include "tquic.h"
 
 #define READ_BUF_SIZE 4096
@@ -126,15 +127,26 @@ static void base64_encode(const unsigned char *input, int length, char *output) 
     output[j] = '\0';
 }
 
-// 生成 WebSocket Accept 密钥
+// 生成 WebSocket Accept 密钥（符合 RFC 6455 标准）
 static void generate_websocket_accept(const char *key, char *accept) {
     char concatenated[256];
     snprintf(concatenated, sizeof(concatenated), "%s%s", key, WEBSOCKET_MAGIC_STRING);
-    
-    // 这里应该使用 SHA-1 哈希，为简化演示使用简单的编码
-    // 实际项目中应该使用 OpenSSL 的 SHA-1 函数
-    unsigned char hash[20] = {0}; // 简化的哈希值
+
+    // 使用 OpenSSL 的 SHA-1 哈希函数
+    unsigned char hash[20];
+    SHA1((const unsigned char *)concatenated, strlen(concatenated), hash);
+
+    // 将哈希值进行 Base64 编码
     base64_encode(hash, 20, accept);
+
+    fprintf(stderr, "WebSocket Accept key generated:\n");
+    fprintf(stderr, "  Input: %s\n", concatenated);
+    fprintf(stderr, "  SHA-1 hash: ");
+    for (int i = 0; i < 20; i++) {
+        fprintf(stderr, "%02x", hash[i]);
+    }
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  Base64 encoded: %s\n", accept);
 }
 
 // 解析 WebSocket 帧
@@ -232,8 +244,8 @@ static void send_websocket_message(struct websocket_connection *ws_conn, uint8_t
                                           true, frame, sizeof(frame));
     
     if (frame_len > 0) {
-        ssize_t written = quic_stream_write(ws_conn->quic_conn, ws_conn->stream_id,
-                                          frame, frame_len, false);
+        ssize_t written = http3_send_body(ws_conn->h3_conn, ws_conn->quic_conn,
+                                        ws_conn->stream_id, frame, frame_len, false);
         if (written > 0) {
             fprintf(stderr, "WebSocket message sent: %.*s\n", (int)message_len, message);
         } else {
@@ -283,21 +295,117 @@ static void handle_websocket_message(struct websocket_connection *ws_conn,
     }
 }
 
-// 检查是否为 WebSocket 升级请求
+// WebSocket 升级检查的上下文结构
+struct websocket_upgrade_context {
+    bool has_upgrade;
+    bool has_connection;
+    bool has_version;
+    bool is_get_method;
+    char *websocket_key;
+    char *websocket_version;
+};
+
+// HTTP/3 头部遍历回调函数
+static int websocket_header_callback(const uint8_t *name, size_t name_len,
+                                    const uint8_t *value, size_t value_len,
+                                    void *argp) {
+    struct websocket_upgrade_context *ctx = (struct websocket_upgrade_context *)argp;
+
+    // 转换为字符串便于比较（注意：这里假设头部是 ASCII）
+    char name_str[256], value_str[256];
+    if (name_len >= sizeof(name_str) || value_len >= sizeof(value_str)) {
+        return 0; // 头部太长，跳过
+    }
+
+    memcpy(name_str, name, name_len);
+    name_str[name_len] = '\0';
+    memcpy(value_str, value, value_len);
+    value_str[value_len] = '\0';
+
+    // 转换为小写进行比较
+    for (size_t i = 0; i < name_len; i++) {
+        if (name_str[i] >= 'A' && name_str[i] <= 'Z') {
+            name_str[i] += 32;
+        }
+    }
+    for (size_t i = 0; i < value_len; i++) {
+        if (value_str[i] >= 'A' && value_str[i] <= 'Z') {
+            value_str[i] += 32;
+        }
+    }
+
+    // 检查各种 WebSocket 相关头部
+    if (strcmp(name_str, ":method") == 0) {
+        if (strcmp(value_str, "get") == 0) {
+            ctx->is_get_method = true;
+        }
+    } else if (strcmp(name_str, "upgrade") == 0) {
+        if (strcmp(value_str, "websocket") == 0) {
+            ctx->has_upgrade = true;
+        }
+    } else if (strcmp(name_str, "connection") == 0) {
+        // Connection 头部可能包含多个值，检查是否包含 "upgrade"
+        if (strstr(value_str, "upgrade") != NULL) {
+            ctx->has_connection = true;
+        }
+    } else if (strcmp(name_str, "sec-websocket-key") == 0) {
+        if (ctx->websocket_key) {
+            free(ctx->websocket_key);
+        }
+        ctx->websocket_key = strndup((const char *)value, value_len);
+    } else if (strcmp(name_str, "sec-websocket-version") == 0) {
+        if (ctx->websocket_version) {
+            free(ctx->websocket_version);
+        }
+        ctx->websocket_version = strndup((const char *)value, value_len);
+        // 检查版本是否为 13（RFC 6455 标准版本）
+        if (strcmp(value_str, "13") == 0) {
+            ctx->has_version = true;
+        }
+    }
+
+    return 0; // 继续遍历
+}
+
+// 检查是否为 WebSocket 升级请求（真正的实现）
 static bool is_websocket_upgrade(const struct http3_headers_t *headers, char **websocket_key) {
-    bool has_upgrade = false, has_connection = false, has_version = false;
+    struct websocket_upgrade_context ctx = {0};
     *websocket_key = NULL;
-    
-    // 这里需要实现 HTTP/3 头部遍历，简化演示
-    // 实际应该使用 http3_for_each_header 函数
-    
-    // 简化检查：假设这是一个 WebSocket 升级请求
-    has_upgrade = true;
-    has_connection = true;
-    has_version = true;
-    *websocket_key = strdup("dGhlIHNhbXBsZSBub25jZQ=="); // 示例密钥
-    
-    return has_upgrade && has_connection && has_version && *websocket_key;
+
+    // 遍历所有 HTTP/3 头部
+    int ret = http3_for_each_header(headers, websocket_header_callback, &ctx);
+    if (ret < 0) {
+        fprintf(stderr, "Failed to iterate headers: %d\n", ret);
+        if (ctx.websocket_key) free(ctx.websocket_key);
+        if (ctx.websocket_version) free(ctx.websocket_version);
+        return false;
+    }
+
+    // 检查是否满足 WebSocket 升级的所有条件
+    bool is_valid_upgrade = ctx.is_get_method &&
+                           ctx.has_upgrade &&
+                           ctx.has_connection &&
+                           ctx.has_version &&
+                           ctx.websocket_key != NULL;
+
+    if (is_valid_upgrade) {
+        *websocket_key = ctx.websocket_key; // 转移所有权
+        fprintf(stderr, "Valid WebSocket upgrade request detected\n");
+        fprintf(stderr, "  WebSocket-Key: %s\n", ctx.websocket_key);
+        fprintf(stderr, "  WebSocket-Version: %s\n", ctx.websocket_version ? ctx.websocket_version : "unknown");
+    } else {
+        fprintf(stderr, "Invalid WebSocket upgrade request:\n");
+        fprintf(stderr, "  GET method: %s\n", ctx.is_get_method ? "✓" : "✗");
+        fprintf(stderr, "  Upgrade header: %s\n", ctx.has_upgrade ? "✓" : "✗");
+        fprintf(stderr, "  Connection header: %s\n", ctx.has_connection ? "✓" : "✗");
+        fprintf(stderr, "  WebSocket version: %s\n", ctx.has_version ? "✓" : "✗");
+        fprintf(stderr, "  WebSocket key: %s\n", ctx.websocket_key ? "✓" : "✗");
+
+        if (ctx.websocket_key) free(ctx.websocket_key);
+    }
+
+    if (ctx.websocket_version) free(ctx.websocket_version);
+    return is_valid_upgrade;
 }
 
 // HTTP/3 事件处理器实现

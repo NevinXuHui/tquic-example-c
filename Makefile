@@ -29,6 +29,9 @@ tquic_websocket_server: tquic_websocket_server.c $(LIB_DIR)/libtquic.a
 tquic_websocket_client: tquic_websocket_client.c $(LIB_DIR)/libtquic.a
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
 
+tquic_websocket_interactive_client: tquic_websocket_interactive_client.c $(LIB_DIR)/libtquic.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(INCS) $(LIBS)
+
 $(LIB_DIR)/libtquic.a:
 	git submodule update --init --recursive && cd $(TQUIC_DIR) && cargo build --release -F ffi
 

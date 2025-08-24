@@ -293,7 +293,6 @@ static void http3_on_stream_data(void *ctx, uint64_t stream_id) {
     struct websocket_client *client = ctx;
     if (!client || !client->is_websocket) return;
 
-    fprintf(stderr, "Client received data on stream %llu\n", (unsigned long long)stream_id);
     static uint8_t buf[READ_BUF_SIZE];
     
     while (true) {
@@ -312,8 +311,6 @@ static void http3_on_stream_data(void *ctx, uint64_t stream_id) {
         if (read == 0) {
             break;
         }
-
-        fprintf(stderr, "Client read %ld bytes from stream %llu\n", read, (unsigned long long)stream_id);
 
         // 解析 WebSocket 帧
         size_t offset = 0;
