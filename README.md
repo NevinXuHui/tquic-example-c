@@ -123,11 +123,55 @@ cmake --install build
 # 查看可用预设
 cmake --list-presets
 
+# 可用预设:
+# default         - 默认配置，构建所有示例
+# debug           - 调试构建，包含符号信息
+# release         - 优化的发布构建
+# websocket-only  - 只构建 WebSocket 示例
+# ninja           - 使用 Ninja 生成器的快速构建
+
 # 使用预设配置
 cmake --preset release
 
 # 使用预设构建
 cmake --build --preset release
+```
+
+#### 5. CMake 构建选项
+
+| 变量名 | 默认值 | 描述 |
+|--------|--------|------|
+| `CMAKE_BUILD_TYPE` | Release | 构建类型 (Debug/Release/RelWithDebInfo/MinSizeRel) |
+| `BUILD_WEBSOCKET_EXAMPLES` | ON | 是否构建 WebSocket 示例 |
+| `BUILD_SIMPLE_EXAMPLES` | ON | 是否构建简单 QUIC 示例 |
+| `BUILD_TESTS` | OFF | 是否构建测试程序 |
+
+```bash
+# 示例：只构建 WebSocket 示例的调试版本
+cmake -B build-debug \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DBUILD_WEBSOCKET_EXAMPLES=ON \
+  -DBUILD_SIMPLE_EXAMPLES=OFF
+
+cmake --build build-debug
+```
+
+#### 6. 构建输出目录
+```bash
+# CMake 构建输出
+build/bin/
+├── tquic_websocket_server
+├── tquic_websocket_client
+├── tquic_websocket_interactive_client
+├── simple_server
+├── simple_client
+├── simple_h3_server
+└── simple_h3_client
+
+# Makefile 构建输出 (项目根目录)
+./tquic_websocket_server
+./tquic_websocket_client
+...
 ```
 
 ### 方法二：使用传统 Makefile
@@ -290,6 +334,16 @@ Goodbye!
 - **零拷贝** - 高效的数据传输
 - **连接复用** - QUIC 多路复用
 - **快速握手** - 0-RTT 连接建立
+
+#### 4. 现代构建系统
+- **CMake 3.16+** - 现代 CMake 最佳实践
+- **构建预设** - 预定义的常用构建配置
+- **并行构建** - 多核 CPU 充分利用
+- **条件编译** - 按需构建不同组件
+- **跨平台支持** - Linux, macOS, Windows
+- **工具链支持** - GCC, Clang, MSVC
+- **静态分析集成** - Clang Static Analyzer
+- **包管理友好** - 支持 vcpkg, Conan 等
 
 ## 🔧 重要修复历史
 
@@ -493,6 +547,9 @@ sudo ufw allow 4433
 ```bash
 # 设置环境变量启用 TQUIC 调试日志
 export RUST_LOG=debug
+./build/bin/tquic_websocket_server 127.0.0.1 4433
+
+# 或者使用 Makefile 构建的版本
 ./tquic_websocket_server 127.0.0.1 4433
 ```
 
@@ -505,8 +562,30 @@ sudo tcpdump -i lo -n port 4433 -w websocket.pcap
 
 #### 内存泄漏检查
 ```bash
-# 使用 Valgrind 检查内存泄漏
+# 使用 Valgrind 检查内存泄漏 (CMake 调试构建)
+./build.sh --preset debug
+valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 4433
+
+# 或者 Makefile 构建
 valgrind --leak-check=full ./tquic_websocket_server 127.0.0.1 4433
+```
+
+#### CMake 构建故障排除
+```bash
+# 查看详细构建信息
+./build.sh --verbose
+
+# 手动构建 TQUIC 库
+cmake --build build --target build_tquic
+
+# 清理 TQUIC 构建
+cmake --build build --target clean_tquic
+
+# 完全清理重建
+./build.sh --clean
+
+# 检查 CMake 配置
+cmake -B build -DCMAKE_BUILD_TYPE=Release --debug-output
 ```
 
 ## 📚 API 参考
@@ -611,12 +690,15 @@ cd tquic-example-c
 2. **设置开发环境**
 ```bash
 # 安装开发依赖
-sudo apt install clang-format valgrind gdb
+sudo apt install clang-format valgrind gdb cmake ninja-build
 
 # 初始化子模块
 git submodule update --init --recursive
 
-# 编译调试版本
+# 编译调试版本 (CMake)
+./build.sh --preset debug
+
+# 或者使用 Makefile
 make DEBUG=1
 ```
 
@@ -625,11 +707,29 @@ make DEBUG=1
 # 格式化代码
 clang-format -i *.c *.h
 
-# 静态分析
+# 静态分析 (CMake)
+cmake -B build-analyze -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
+scan-build cmake --build build-analyze
+
+# 或者传统方式
 clang-static-analyzer *.c
 
-# 内存检查
-valgrind --leak-check=full ./tquic_websocket_server 127.0.0.1 4433
+# 内存检查 (CMake 调试构建)
+./build.sh --preset debug
+valgrind --leak-check=full ./build-debug/bin/tquic_websocket_server 127.0.0.1 4433
+```
+
+4. **性能对比**
+
+| 构建方式 | 首次构建时间 | 增量构建时间 | 并行支持 | 推荐用途 |
+|----------|--------------|--------------|----------|----------|
+| Makefile | ~60s | ~10s | 有限 | 简单构建 |
+| CMake + Make | ~55s | ~8s | 完整 | 开发调试 |
+| CMake + Ninja | ~45s | ~5s | 最佳 | 快速迭代 |
+
+```bash
+# 使用 Ninja 获得最快构建速度
+./build.sh --preset ninja
 ```
 
 ### 提交规范
