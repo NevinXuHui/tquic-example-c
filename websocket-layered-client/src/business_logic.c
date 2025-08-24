@@ -235,7 +235,13 @@ static void on_message_event(const message_event_t *event, void *user_data) {
         case MSG_EVENT_RECEIVED:
             if (event->message) {
                 logic->stats.notifications_received++;
-                
+
+                // 打印接收到的消息用于调试
+                printf("[业务层] 收到消息: 类型=%s, ID=%s, 数据=%s\n",
+                       event->message->type ? event->message->type : "NULL",
+                       event->message->id ? event->message->id : "NULL",
+                       event->message->data ? event->message->data : "NULL");
+
                 // 根据消息类型处理
                 if (strcmp(event->message->type, "notification") == 0) {
                     business_event_t biz_event = {
@@ -245,13 +251,13 @@ static void on_message_event(const message_event_t *event, void *user_data) {
                         .data = event->message->data,
                         .timestamp = event->message->timestamp
                     };
-                    
+
                     if (logic->callback) {
                         logic->callback(&biz_event, logic->user_data);
                     }
                 } else if (strcmp(event->message->type, "response") == 0) {
                     logic->stats.responses_received++;
-                    
+
                     business_event_t biz_event = {
                         .type = BIZ_EVENT_RESPONSE_RECEIVED,
                         .message_type = event->message->type,
@@ -259,7 +265,20 @@ static void on_message_event(const message_event_t *event, void *user_data) {
                         .data = event->message->data,
                         .timestamp = event->message->timestamp
                     };
-                    
+
+                    if (logic->callback) {
+                        logic->callback(&biz_event, logic->user_data);
+                    }
+                } else {
+                    // 处理其他所有类型的消息（text, subscribe, heartbeat 等）
+                    business_event_t biz_event = {
+                        .type = BIZ_EVENT_MESSAGE_RECEIVED,
+                        .message_type = event->message->type,
+                        .message_id = event->message->id,
+                        .data = event->message->data,
+                        .timestamp = event->message->timestamp
+                    };
+
                     if (logic->callback) {
                         logic->callback(&biz_event, logic->user_data);
                     }

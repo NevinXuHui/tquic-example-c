@@ -27,6 +27,7 @@
 // 前向声明
 static void ping_timer_cb(EV_P_ ev_timer *w, int revents);
 static void socket_cb(EV_P_ ev_io *w, int revents);
+static void timeout_callback(EV_P_ ev_timer *w, int revents);
 
 // TQUIC 回调函数
 static void client_on_conn_created(void *tctx, struct quic_conn_t *conn);
@@ -39,6 +40,15 @@ static void client_on_stream_closed(void *tctx, struct quic_conn_t *conn, uint64
 
 // 数据包发送回调
 static int quic_packet_send(void *psctx, struct quic_packet_out_spec_t *pkts, unsigned int count);
+
+// HTTP/3 事件处理器
+static void http3_on_stream_headers(void *ctx, uint64_t stream_id,
+                                   const struct http3_headers_t *headers, bool fin);
+static void http3_on_stream_data(void *ctx, uint64_t stream_id);
+static void http3_on_stream_finished(void *ctx, uint64_t stream_id);
+static void http3_on_stream_reset(void *ctx, uint64_t stream_id, uint64_t error_code);
+static void http3_on_stream_priority_update(void *ctx, uint64_t stream_id);
+static void http3_on_conn_goaway(void *ctx, uint64_t stream_id);
 
 // WebSocket 连接结构体
 struct ws_connection {
@@ -113,6 +123,122 @@ ws_config_t ws_config_default(void) {
     return config;
 }
 
+// HTTP/3 事件处理器实现
+static void http3_on_stream_headers(void *ctx, uint64_t stream_id,
+                                   const struct http3_headers_t *headers, bool fin) {
+    ws_connection_t *ws_conn = (ws_connection_t *)ctx;
+    if (!ws_conn) return;
+
+    printf("HTTP/3 headers received on stream %lu\n", stream_id);
+
+    // 简化检查：假设收到了 WebSocket 升级响应
+    if (!ws_conn->websocket_handshake_done) {
+        ws_conn->websocket_handshake_done = true;
+        ws_conn->state = WS_STATE_CONNECTED;
+
+        printf("WebSocket handshake completed!\n");
+
+        // 触发连接成功事件
+        ws_event_t event = {
+            .type = WS_EVENT_CONNECTED,
+            .connection = ws_conn
+        };
+        if (ws_conn->callback) {
+            ws_conn->callback(&event, ws_conn->user_data);
+        }
+    }
+}
+
+static void http3_on_stream_data(void *ctx, uint64_t stream_id) {
+    ws_connection_t *ws_conn = (ws_connection_t *)ctx;
+    if (!ws_conn || !ws_conn->h3_conn) return;
+
+    printf("HTTP/3 data received on stream %lu\n", stream_id);
+
+    uint8_t buffer[4096];
+
+    while (true) {
+        ssize_t len = http3_recv_body(ws_conn->h3_conn, ws_conn->quic_conn,
+                                     stream_id, buffer, sizeof(buffer));
+
+        if (len < 0) {
+            if (len == -1) { // HTTP3_ERR_DONE
+                break; // 没有更多数据
+            }
+            printf("WebSocket read error: %ld\n", len);
+            return;
+        }
+
+        if (len == 0) {
+            break;
+        }
+
+        printf("Received %ld bytes of WebSocket data\n", len);
+
+        // 解析 WebSocket 帧
+        size_t offset = 0;
+        while (offset < (size_t)len) {
+            ws_frame_t frame;
+            int frame_len = ws_frame_parse(buffer + offset, len - offset, &frame);
+
+            if (frame_len < 0) {
+                break; // 需要更多数据
+            }
+
+            printf("Parsed WebSocket frame: opcode=%d, length=%lu\n", frame.opcode, frame.payload_len);
+
+            // 触发消息接收事件
+            ws_event_t event = {
+                .type = WS_EVENT_MESSAGE_RECEIVED,
+                .connection = ws_conn,
+                .message = {
+                    .data = frame.payload,
+                    .length = frame.payload_len,
+                    .frame_type = frame.opcode
+                }
+            };
+            if (ws_conn->callback) {
+                ws_conn->callback(&event, ws_conn->user_data);
+            }
+
+            ws_frame_free(&frame);
+            offset += frame_len;
+        }
+
+        // 更新统计信息
+        pthread_mutex_lock(&ws_conn->mutex);
+        ws_conn->stats.bytes_received += len;
+        ws_conn->stats.last_activity = time(NULL);
+        pthread_mutex_unlock(&ws_conn->mutex);
+    }
+}
+
+static void http3_on_stream_finished(void *ctx, uint64_t stream_id) {
+    printf("HTTP/3 stream %lu finished\n", stream_id);
+}
+
+static void http3_on_stream_reset(void *ctx, uint64_t stream_id, uint64_t error_code) {
+    printf("HTTP/3 stream %lu reset with error %lu\n", stream_id, error_code);
+}
+
+static void http3_on_stream_priority_update(void *ctx, uint64_t stream_id) {
+    printf("HTTP/3 stream %lu priority update\n", stream_id);
+}
+
+static void http3_on_conn_goaway(void *ctx, uint64_t stream_id) {
+    printf("HTTP/3 connection goaway on stream %lu\n", stream_id);
+}
+
+// HTTP/3 事件处理器方法表
+static const struct http3_methods_t http3_methods = {
+    .on_stream_headers = http3_on_stream_headers,
+    .on_stream_data = http3_on_stream_data,
+    .on_stream_finished = http3_on_stream_finished,
+    .on_stream_reset = http3_on_stream_reset,
+    .on_stream_priority_update = http3_on_stream_priority_update,
+    .on_conn_goaway = http3_on_conn_goaway,
+};
+
 // TQUIC 回调函数实现
 static void client_on_conn_created(void *tctx, struct quic_conn_t *conn) {
     ws_connection_t *ws_conn = (ws_connection_t *)tctx;
@@ -131,6 +257,34 @@ static void client_on_conn_established(void *tctx, struct quic_conn_t *conn) {
         return;
     }
 
+    // 设置 HTTP/3 事件处理器
+    http3_conn_set_events_handler(ws_conn->h3_conn, &http3_methods, ws_conn);
+
+    // 生成随机 WebSocket 密钥
+    uint8_t nonce[16];
+    for (int i = 0; i < 16; i++) {
+        nonce[i] = rand() & 0xFF;
+    }
+
+    // Base64 编码密钥
+    char websocket_key[25]; // 16字节 -> 24字符 + null terminator
+    static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    int j = 0;
+    for (int i = 0; i < 16; i += 3) {
+        uint32_t val = (nonce[i] << 16) |
+                       ((i + 1 < 16) ? (nonce[i + 1] << 8) : 0) |
+                       ((i + 2 < 16) ? nonce[i + 2] : 0);
+
+        websocket_key[j++] = base64_chars[(val >> 18) & 0x3F];
+        websocket_key[j++] = base64_chars[(val >> 12) & 0x3F];
+        websocket_key[j++] = (i + 1 < 16) ? base64_chars[(val >> 6) & 0x3F] : '=';
+        websocket_key[j++] = (i + 2 < 16) ? base64_chars[val & 0x3F] : '=';
+    }
+    websocket_key[24] = '\0';
+
+    printf("Generated WebSocket key: %s\n", websocket_key);
+
     // 发送 WebSocket 升级请求
     struct http3_header_t headers[] = {
         {(uint8_t*)":method", 7, (uint8_t*)"GET", 3},
@@ -139,7 +293,7 @@ static void client_on_conn_established(void *tctx, struct quic_conn_t *conn) {
         {(uint8_t*)":authority", 10, (uint8_t*)ws_conn->config.host, strlen(ws_conn->config.host)},
         {(uint8_t*)"upgrade", 7, (uint8_t*)"websocket", 9},
         {(uint8_t*)"connection", 10, (uint8_t*)"upgrade", 7},
-        {(uint8_t*)"sec-websocket-key", 17, (uint8_t*)"dGhlIHNhbXBsZSBub25jZQ==", 24},
+        {(uint8_t*)"sec-websocket-key", 17, (uint8_t*)websocket_key, 24},
         {(uint8_t*)"sec-websocket-version", 21, (uint8_t*)"13", 2},
     };
 
@@ -147,7 +301,7 @@ static void client_on_conn_established(void *tctx, struct quic_conn_t *conn) {
     int64_t stream_id = http3_stream_new(ws_conn->h3_conn, conn);
     if (stream_id >= 0) {
         int ret = http3_send_headers(ws_conn->h3_conn, conn, stream_id, headers,
-                                   sizeof(headers)/sizeof(headers[0]), true);
+                                   sizeof(headers)/sizeof(headers[0]), false);
         if (ret == 0) {
             ws_conn->stream_id = stream_id;
             printf("WebSocket upgrade request sent on stream %lu\n", stream_id);
@@ -190,13 +344,18 @@ static void client_on_stream_created(void *tctx, struct quic_conn_t *conn, uint6
 static void client_on_stream_readable(void *tctx, struct quic_conn_t *conn, uint64_t stream_id) {
     ws_connection_t *ws_conn = (ws_connection_t *)tctx;
 
-    if (!ws_conn->h3_conn) return;
+    if (!ws_conn || !ws_conn->h3_conn) return;
 
-    // 读取 HTTP/3 数据
+    // 处理 HTTP/3 流状态，这会触发相应的 HTTP/3 回调
+    http3_conn_process_streams(ws_conn->h3_conn, conn);
+
+    // 尝试读取数据
     uint8_t buffer[4096];
     ssize_t len = http3_recv_body(ws_conn->h3_conn, ws_conn->quic_conn, stream_id, buffer, sizeof(buffer));
 
     if (len > 0) {
+        printf("Received %ld bytes on stream %lu\n", len, stream_id);
+
         if (!ws_conn->websocket_handshake_done) {
             // 检查 WebSocket 握手响应
             // 简化处理：假设握手成功
@@ -215,9 +374,12 @@ static void client_on_stream_readable(void *tctx, struct quic_conn_t *conn, uint
             }
         } else {
             // 处理 WebSocket 数据帧
+            printf("Processing WebSocket frame data...\n");
             ws_frame_t frame;
             int parsed = ws_frame_parse(buffer, len, &frame);
             if (parsed > 0) {
+                printf("Parsed WebSocket frame: opcode=%d, length=%lu\n", frame.opcode, frame.payload_len);
+
                 // 触发消息接收事件
                 ws_event_t event = {
                     .type = WS_EVENT_MESSAGE_RECEIVED,
@@ -241,6 +403,11 @@ static void client_on_stream_readable(void *tctx, struct quic_conn_t *conn, uint
         ws_conn->stats.bytes_received += len;
         ws_conn->stats.last_activity = time(NULL);
         pthread_mutex_unlock(&ws_conn->mutex);
+    } else if (len == -1) {
+        // HTTP3_ERR_DONE - 没有更多数据可读，这是正常情况
+        // 不需要打印错误信息，静默处理
+    } else if (len < 0) {
+        printf("HTTP/3 recv error: %ld\n", len);
     }
 }
 
@@ -322,6 +489,8 @@ const struct quic_transport_methods_t quic_transport_methods = {
 const struct quic_packet_send_methods_t quic_packet_send_methods = {
     .on_packets_send = quic_packet_send,
 };
+
+
 
 // 创建 WebSocket 连接
 ws_connection_t *ws_connection_create(const ws_config_t *config,
@@ -537,6 +706,23 @@ int ws_connection_connect(ws_connection_t *conn) {
         ev_io_init(&conn->socket_watcher, socket_cb, conn->sock, EV_READ);
         conn->socket_watcher.data = conn;
         ev_io_start(conn->loop, &conn->socket_watcher);
+
+        // 设置 QUIC 超时定时器
+        ev_init(&conn->connect_timer, timeout_callback);
+        conn->connect_timer.data = conn;
+
+        // 立即处理连接并启动定时器
+        quic_endpoint_process_connections(conn->quic_endpoint);
+        uint64_t timeout_us = quic_endpoint_timeout(conn->quic_endpoint);
+        if (timeout_us == UINT64_MAX) {
+            timeout_us = 100000; // 100ms 默认超时
+        }
+        double timeout_sec = (double)timeout_us / 1000000.0;
+        if (timeout_sec < 0.0001) {
+            timeout_sec = 0.0001;
+        }
+        conn->connect_timer.repeat = timeout_sec;
+        ev_timer_again(conn->loop, &conn->connect_timer);
     }
 
     // 连接到服务器
@@ -800,6 +986,28 @@ void ws_connection_process_events(ws_connection_t *conn) {
     }
 
     pthread_mutex_unlock(&conn->mutex);
+}
+
+// QUIC 超时定时器回调
+static void timeout_callback(EV_P_ ev_timer *w, int revents) {
+    ws_connection_t *conn = (ws_connection_t *)w->data;
+    if (!conn || !conn->quic_endpoint) return;
+
+    // 处理 QUIC 连接状态
+    quic_endpoint_process_connections(conn->quic_endpoint);
+
+    // 获取下一个超时时间
+    uint64_t timeout_us = quic_endpoint_timeout(conn->quic_endpoint);
+    if (timeout_us == UINT64_MAX) {
+        ev_timer_stop(EV_A_ w);
+    } else {
+        double timeout_sec = (double)timeout_us / 1000000.0;
+        if (timeout_sec < 0.0001) {
+            timeout_sec = 0.0001;
+        }
+        w->repeat = timeout_sec;
+        ev_timer_again(EV_A_ w);
+    }
 }
 
 // 心跳定时器回调
