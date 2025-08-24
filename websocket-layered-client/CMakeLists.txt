@@ -204,9 +204,13 @@ if(BUILD_EXAMPLES)
     # 聊天客户端示例
     add_executable(chat_client examples/chat_client.c)
     target_link_libraries(chat_client layered_client)
-    
+
+    # JSON 数据交换客户端示例
+    add_executable(json_client examples/json_client.c)
+    target_link_libraries(json_client layered_client)
+
     # 设置输出目录
-    set_target_properties(chat_client PROPERTIES
+    set_target_properties(chat_client json_client PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     )
 endif()

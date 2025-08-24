@@ -258,4 +258,5 @@ print_success "所有操作完成! 🎉"
 if [[ "$BUILD_EXAMPLES" == true ]]; then
     print_info "运行示例程序:"
     print_info "  聊天客户端: ./$BUILD_DIR/bin/chat_client 127.0.0.1 4433 myusername"
+    print_info "  JSON客户端: ./$BUILD_DIR/bin/json_client 127.0.0.1 4433 json_user"
 fi
